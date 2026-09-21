@@ -1,14 +1,47 @@
 #!/usr/bin/env node
 
-const { spawn } = require("node:child_process");
-const { randomBytes } = require("node:crypto");
-const fs = require("node:fs");
-const path = require("node:path");
+import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  isValidSessionId,
+  PI_CONTAINER_ID,
+  PI_SESSION_DIR,
+} from "./pi-sessions.js";
 
-const CONTAINER_ID =
-  "3d676529c2ce5d5967767a8b3fcb32b2b5faac60a86ec7aa13fce04400c308b4";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 const ENV_FILE = path.join(__dirname, ".env");
 const PROVIDER_ID = "dotenv-provider";
+
+function parseArguments(args) {
+  const promptParts = [];
+  let sessionId = "";
+  let sessionName = "";
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--") {
+      promptParts.push(...args.slice(index + 1));
+      break;
+    }
+    if (argument === "--session-id") {
+      sessionId = args[index + 1] || "";
+      index += 1;
+      continue;
+    }
+    if (argument === "--session-name") {
+      sessionName = args[index + 1] || "";
+      index += 1;
+      continue;
+    }
+    promptParts.push(argument);
+  }
+
+  return { prompt: promptParts.join(" ").trim(), sessionId, sessionName };
+}
 
 function parseEnvFile(filePath) {
   const values = {};
@@ -79,7 +112,7 @@ async function containerIsRunning() {
   let output = "";
   const child = spawn(
     "docker",
-    ["inspect", "--format", "{{.State.Running}}", CONTAINER_ID],
+    ["inspect", "--format", "{{.State.Running}}", PI_CONTAINER_ID],
     { stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
   );
   child.stdout.on("data", (chunk) => {
@@ -97,6 +130,7 @@ async function main() {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     console.log(`用法：
   node run-pi-agent.js "你的任务"
+  node run-pi-agent.js --session-id <UUID> -- "继续这个任务"
   "你的任务" | node run-pi-agent.js
   node run-pi-agent.js                 # 启动交互界面`);
     return;
@@ -117,11 +151,14 @@ async function main() {
   }
 
   if (!(await containerIsRunning())) {
-    throw new Error(`容器不存在或未运行：${CONTAINER_ID}`);
+    throw new Error(`容器不存在或未运行：${PI_CONTAINER_ID}`);
   }
 
-  const promptFromArgs = process.argv.slice(2).join(" ").trim();
-  const prompt = promptFromArgs || (!process.stdin.isTTY ? await readStdin() : "");
+  const parsedArguments = parseArguments(process.argv.slice(2));
+  if (parsedArguments.sessionId && !isValidSessionId(parsedArguments.sessionId)) {
+    throw new Error("session ID 格式无效");
+  }
+  const prompt = parsedArguments.prompt || (!process.stdin.isTTY ? await readStdin() : "");
   const interactive = !prompt;
   const agentDir = `/tmp/pi-agent-launcher-${process.pid}-${randomBytes(6).toString("hex")}`;
   const workdir = env.PI_WORKDIR || "/";
@@ -152,10 +189,20 @@ async function main() {
   ];
 
   const setupScript =
-    'umask 077; mkdir -p "$1"; cat > "$1/models.json"';
+    'umask 077; mkdir -p "$1" "$2"; cat > "$1/models.json"';
   const setupCode = await run(
     "docker",
-    [...commonExecArgs, "-i", CONTAINER_ID, "sh", "-c", setupScript, "sh", agentDir],
+    [
+      ...commonExecArgs,
+      "-i",
+      PI_CONTAINER_ID,
+      "sh",
+      "-c",
+      setupScript,
+      "sh",
+      agentDir,
+      PI_SESSION_DIR,
+    ],
     {
       stdio: ["pipe", "inherit", "inherit"],
       input: JSON.stringify(modelConfig),
@@ -169,13 +216,16 @@ async function main() {
       ...(interactive ? ["-i", "-t"] : []),
       "-w",
       workdir,
-      CONTAINER_ID,
+      PI_CONTAINER_ID,
       "pi",
       "--provider",
       PROVIDER_ID,
       "--model",
       env.MODEL,
-      "--no-session",
+      "--session-dir",
+      PI_SESSION_DIR,
+      ...(parsedArguments.sessionId ? ["--session-id", parsedArguments.sessionId] : []),
+      ...(parsedArguments.sessionName ? ["--name", parsedArguments.sessionName] : []),
       "--approve",
       ...(interactive ? [] : ["--print", "--", prompt]),
     ];
@@ -188,7 +238,7 @@ async function main() {
         "docker",
         [
           "exec",
-          CONTAINER_ID,
+          PI_CONTAINER_ID,
           "sh",
           "-c",
           'rm -rf -- "$1"',
