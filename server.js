@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
-import { createServer } from "node:http";
+import { createServer, request as createHttpRequest } from "node:http";
+import { connect as connectSocket } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
@@ -13,6 +14,9 @@ const PORT = Number(process.env.PORT || 4173);
 const IS_PRODUCTION = process.argv.includes("--production");
 const MAX_BODY_SIZE = 32 * 1024;
 const MAX_AGENT_OUTPUT = 2 * 1024 * 1024;
+const SANDBOX_PROXY_HOST = "127.0.0.1";
+const SANDBOX_PROXY_PORT = 18080;
+const SANDBOX_PROXY_PREFIX = "/proxy/5173/";
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -61,6 +65,57 @@ function readJson(request) {
     });
     request.on("error", reject);
   });
+}
+
+function proxySandboxRequest(request, response) {
+  const proxyRequest = createHttpRequest(
+    {
+      hostname: SANDBOX_PROXY_HOST,
+      port: SANDBOX_PROXY_PORT,
+      method: request.method,
+      path: request.url,
+      headers: {
+        ...request.headers,
+        host: `${SANDBOX_PROXY_HOST}:${SANDBOX_PROXY_PORT}`,
+      },
+    },
+    (proxyResponse) => {
+      response.writeHead(proxyResponse.statusCode || 502, proxyResponse.headers);
+      proxyResponse.pipe(response);
+    },
+  );
+
+  proxyRequest.on("error", (error) => {
+    if (response.headersSent) {
+      response.destroy(error);
+      return;
+    }
+    sendJson(response, 502, { error: `无法连接沙箱预览：${error.message}` });
+  });
+  request.pipe(proxyRequest);
+}
+
+function proxySandboxUpgrade(request, socket, head) {
+  const upstream = connectSocket(SANDBOX_PROXY_PORT, SANDBOX_PROXY_HOST);
+
+  upstream.once("connect", () => {
+    const headers = {
+      ...request.headers,
+      host: `${SANDBOX_PROXY_HOST}:${SANDBOX_PROXY_PORT}`,
+    };
+    const headerLines = Object.entries(headers).flatMap(([name, value]) => {
+      if (Array.isArray(value)) return value.map((item) => `${name}: ${item}`);
+      return value === undefined ? [] : [`${name}: ${value}`];
+    });
+    upstream.write(
+      `${request.method} ${request.url} HTTP/${request.httpVersion}\r\n${headerLines.join("\r\n")}\r\n\r\n`,
+    );
+    if (head.length > 0) upstream.write(head);
+    socket.pipe(upstream).pipe(socket);
+  });
+
+  upstream.on("error", () => socket.destroy());
+  socket.on("error", () => upstream.destroy());
 }
 
 function askPiAgent(prompt, { sessionId, sessionName = "" }) {
@@ -130,6 +185,10 @@ function serveProductionAsset(request, response) {
 const server = createServer(async (request, response) => {
   const requestUrl = new URL(request.url, "http://localhost");
   const pathname = requestUrl.pathname;
+
+  if (pathname.startsWith(SANDBOX_PROXY_PREFIX)) {
+    return proxySandboxRequest(request, response);
+  }
 
   if (request.method === "GET" && pathname === "/api/health") {
     return sendJson(response, 200, { ok: true, agent: "pi", container: "connected" });
@@ -219,6 +278,13 @@ const server = createServer(async (request, response) => {
   }
 
   return serveProductionAsset(request, response);
+});
+
+server.on("upgrade", (request, socket, head) => {
+  const pathname = new URL(request.url, "http://localhost").pathname;
+  if (pathname.startsWith(SANDBOX_PROXY_PREFIX)) {
+    proxySandboxUpgrade(request, socket, head);
+  }
 });
 
 server.listen(PORT, "127.0.0.1", () => {

@@ -18,10 +18,18 @@ import {
   Paperclip,
   Plus,
   RefreshCw,
+  ScanSearch,
   Sparkles,
   WandSparkles,
   X,
 } from "lucide-react";
+import {
+  createElementInspectorOverlay,
+  figmaInspectorTheme,
+} from "./element-inspector-overlay";
+import type { ElementInspectorOverlay } from "./element-inspector-overlay";
+import { createElementInspector } from "./sdk/element-inspector";
+import type { ElementInspector, ElementSelection } from "./sdk/element-inspector";
 
 type MessageRole = "user" | "agent";
 
@@ -57,9 +65,13 @@ interface FileTreeNode {
   children?: FileTreeNode[];
 }
 
+interface SelectedElementItem extends ElementSelection {
+  key: number;
+}
+
 const initialMessages: ChatMessage[] = [];
 
-const SANDBOX_PREVIEW_URL = "http://127.0.0.1:18080/proxy/5173/";
+const SANDBOX_PREVIEW_URL = "/proxy/5173/";
 
 const DEFAULT_CHAT_WIDTH = 420;
 const MIN_CHAT_WIDTH = 320;
@@ -115,6 +127,8 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [isElementPicking, setIsElementPicking] = useState(false);
+  const [selectedElements, setSelectedElements] = useState<SelectedElementItem[]>([]);
   const [previewKey, setPreviewKey] = useState(0);
   const [codeTree, setCodeTree] = useState<FileTreeNode[]>([]);
   const [selectedFile, setSelectedFile] = useState("");
@@ -134,8 +148,13 @@ function App() {
   });
   const [isResizing, setIsResizing] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const sendMessageRef = useRef<((messageOverride?: string) => Promise<string | null>) | null>(null);
   const workspaceRef = useRef<HTMLElement>(null);
+  const previewIframeRef = useRef<HTMLIFrameElement>(null);
+  const elementInspectorRef = useRef<ElementInspector | null>(null);
+  const elementInspectorOverlayRef = useRef<ElementInspectorOverlay | null>(null);
+  const selectedElementKeyRef = useRef(0);
 
   const canSend = input.trim().length > 0 && !isThinking;
 
@@ -171,6 +190,46 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem("artifact-chat-width", String(chatWidth));
   }, [chatWidth]);
+
+  useEffect(() => {
+    if (view !== "preview") return undefined;
+    const iframe = previewIframeRef.current;
+    if (!iframe) return undefined;
+
+    const overlay = createElementInspectorOverlay({
+      iframe,
+      theme: figmaInspectorTheme,
+    });
+    const inspector = createElementInspector({
+      iframe,
+      onInspect: overlay.render,
+      onSelect(selection: ElementSelection) {
+        selectedElementKeyRef.current += 1;
+        setSelectedElements((current) => [
+          ...current,
+          { ...selection, key: selectedElementKeyRef.current },
+        ]);
+      },
+      onCancel() {
+        setIsElementPicking(false);
+      },
+    });
+
+    elementInspectorRef.current = inspector;
+    elementInspectorOverlayRef.current = overlay;
+    return () => {
+      inspector.destroy();
+      overlay.destroy();
+      if (elementInspectorRef.current === inspector) elementInspectorRef.current = null;
+      if (elementInspectorOverlayRef.current === overlay) elementInspectorOverlayRef.current = null;
+    };
+  }, [previewKey, view]);
+
+  useEffect(() => {
+    const active = isElementPicking && view === "preview";
+    elementInspectorOverlayRef.current?.setActive(active);
+    elementInspectorRef.current?.setEnabled(active);
+  }, [isElementPicking, previewKey, view]);
 
   useEffect(() => {
     if (view !== "code") return undefined;
@@ -258,6 +317,7 @@ function App() {
   async function openSession(sessionId: string, signal?: AbortSignal) {
     if (!sessionId || isThinking) return;
     setActiveSessionId(sessionId);
+    setSelectedElements([]);
     setSessionLoading(true);
     setSessionsError("");
     setSidebarOpen(false);
@@ -295,6 +355,7 @@ function App() {
     setActiveSessionId(null);
     setMessages([]);
     setInput("");
+    setSelectedElements([]);
     setSessionsError("");
     setSidebarOpen(false);
   }
@@ -663,8 +724,45 @@ function App() {
           </div>
 
           <div className="composer-wrap">
+            {selectedElements.length > 0 && (
+              <section className="selected-elements-panel" aria-label="已选元素">
+                <div className="selected-elements-heading">
+                  <span>
+                    <ScanSearch size={14} />
+                    已选元素
+                    <b>{selectedElements.length}</b>
+                  </span>
+                  <button type="button" onClick={() => setSelectedElements([])}>
+                    清空
+                  </button>
+                </div>
+                <div className="selected-elements-list" role="list">
+                  {selectedElements.map((element) => (
+                    <div className="selected-element-item" role="listitem" key={element.key}>
+                      <span className="selected-element-icon" aria-hidden="true">
+                        <Code2 size={13} />
+                      </span>
+                      <code title={element.hint}>{element.hint}</code>
+                      <button
+                        type="button"
+                        aria-label={`移除 ${element.hint}`}
+                        title="移除"
+                        onClick={() => {
+                          setSelectedElements((current) =>
+                            current.filter((item) => item.key !== element.key),
+                          );
+                        }}
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
             <div className="composer">
               <textarea
+                ref={composerInputRef}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 onKeyDown={handleKeyDown}
@@ -676,6 +774,18 @@ function App() {
                 <div>
                   <button className="composer-icon" aria-label="添加附件">
                     <Paperclip size={17} />
+                  </button>
+                  <button
+                    className={`composer-icon ${isElementPicking ? "is-active" : ""}`}
+                    aria-label={isElementPicking ? "取消选择元素" : "选择预览元素"}
+                    aria-pressed={isElementPicking}
+                    title={isElementPicking ? "取消选择元素" : "选择预览元素"}
+                    onClick={() => {
+                      if (view !== "preview") setView("preview");
+                      setIsElementPicking((current) => !current);
+                    }}
+                  >
+                    <ScanSearch size={17} />
                   </button>
                   <button className="model-button">
                     <WandSparkles size={15} /> pi Agent
@@ -692,7 +802,11 @@ function App() {
                 </button>
               </div>
             </div>
-            <p className="composer-hint">Enter 发送 · Shift + Enter 换行</p>
+            <p className="composer-hint">
+              {isElementPicking
+                ? "点击预览中的元素，可连续选择 · Esc 完成"
+                : "Enter 发送 · Shift + Enter 换行"}
+            </p>
           </div>
         </section>
 
@@ -729,7 +843,10 @@ function App() {
               </button>
               <button
                 className={view === "code" ? "is-active" : ""}
-                onClick={() => setView("code")}
+                onClick={() => {
+                  setIsElementPicking(false);
+                  setView("code");
+                }}
                 role="tab"
                 aria-selected={view === "code"}
               >
@@ -759,12 +876,13 @@ function App() {
                 <div className="browser-bar">
                   <div className="traffic-lights"><i /><i /><i /></div>
                   <div className="address-bar">
-                    <span className="secure-dot" /> localhost:18080/proxy/5173
+                    <span className="secure-dot" /> {window.location.host}/proxy/5173
                   </div>
                   <MoreHorizontal size={16} />
                 </div>
                 <iframe
                   key={previewKey}
+                  ref={previewIframeRef}
                   className="sandbox-preview"
                   src={SANDBOX_PREVIEW_URL}
                   title="沙箱中的原生 HTML 项目"

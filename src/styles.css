@@ -588,6 +588,120 @@ body.is-resizing-panels * {
   padding: 8px 18px 12px;
 }
 
+.selected-elements-panel {
+  margin-bottom: 8px;
+  border: 1px solid #d5e9f8;
+  border-radius: 11px;
+  background: #f7fbfe;
+  padding: 8px;
+  box-shadow: 0 2px 8px rgba(13, 85, 135, 0.05);
+}
+
+.selected-elements-heading,
+.selected-elements-heading > span,
+.selected-element-item {
+  display: flex;
+  align-items: center;
+}
+
+.selected-elements-heading {
+  justify-content: space-between;
+  padding: 0 2px 7px;
+}
+
+.selected-elements-heading > span {
+  gap: 5px;
+  color: #4f6879;
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.selected-elements-heading b {
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  place-items: center;
+  border-radius: 5px;
+  background: #dcefff;
+  color: #0d78c4;
+  padding: 0 4px;
+  font-size: 0.61rem;
+}
+
+.selected-elements-heading button {
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #778995;
+  padding: 3px 5px;
+  cursor: pointer;
+  font-size: 0.64rem;
+}
+
+.selected-elements-heading button:hover {
+  background: #e8f4fc;
+  color: #176da8;
+}
+
+.selected-elements-list {
+  display: flex;
+  max-height: 118px;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #c3dbea transparent;
+}
+
+.selected-element-item {
+  min-width: 0;
+  min-height: 30px;
+  gap: 7px;
+  border: 1px solid #dfedf6;
+  border-radius: 7px;
+  background: #fff;
+  padding: 4px 5px 4px 6px;
+}
+
+.selected-element-icon {
+  display: grid;
+  width: 21px;
+  height: 21px;
+  flex: 0 0 21px;
+  place-items: center;
+  border-radius: 5px;
+  background: #e7f4fe;
+  color: #0d99ff;
+}
+
+.selected-element-item code {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: #304553;
+  font: 500 0.68rem/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-element-item > button {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #94a2ab;
+  cursor: pointer;
+}
+
+.selected-element-item > button:hover {
+  background: #edf5fa;
+  color: #3b5668;
+}
+
 .composer {
   border: 1px solid #d8d8d4;
   border-radius: 14px;
@@ -642,6 +756,12 @@ body.is-resizing-panels * {
 
 .composer-icon:hover {
   background: #f0f0ed;
+}
+
+.composer-icon.is-active {
+  background: #e8f4ff;
+  color: #0d99ff;
+  box-shadow: inset 0 0 0 1px rgba(13, 153, 255, 0.2);
 }
 
 .model-button {
