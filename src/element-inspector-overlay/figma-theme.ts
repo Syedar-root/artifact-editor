@@ -16,7 +16,7 @@ export const figmaInspectorTheme: ElementInspectorOverlayTheme = {
   measurementBackground: "rgba(255, 255, 255, 0.94)",
   fontFamily: "Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
   cursor: "crosshair",
-  outlineOffset: 1,
+  outlineOffset: 0,
   labelGap: 8,
   labelHeight: 30,
 };
