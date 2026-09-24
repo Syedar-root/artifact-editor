@@ -947,8 +947,321 @@ body.is-resizing-panels * {
 
 .browser-frame {
   display: flex;
+  position: relative;
   min-width: 0;
   flex-direction: column;
+}
+
+.element-editor-popover {
+  position: absolute;
+  z-index: 40;
+  width: min(348px, calc(100% - 20px));
+  overflow: hidden;
+  border: 1px solid rgba(20, 20, 22, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 16px 42px rgba(24, 24, 27, 0.17),
+    0 2px 8px rgba(24, 24, 27, 0.08);
+  color: #27272a;
+  transform: translate(-50%, -100%);
+  backdrop-filter: blur(14px);
+  animation: element-editor-in 140ms ease-out both;
+}
+
+.element-editor-popover.is-below {
+  transform: translate(-50%, 0);
+  transform-origin: top center;
+}
+
+.element-editor-popover.is-above {
+  transform-origin: bottom center;
+}
+
+.element-editor-heading,
+.element-editor-actions,
+.element-editor-format-row,
+.element-editor-number {
+  display: flex;
+  align-items: center;
+}
+
+.element-editor-heading {
+  height: 42px;
+  gap: 8px;
+  border-bottom: 1px solid #ededeb;
+  padding: 0 9px 0 12px;
+}
+
+.element-editor-kind {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 6px;
+  background: #f0efff;
+  color: #6254d9;
+}
+
+.element-editor-heading code {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: #5f5f63;
+  font: 600 0.69rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.element-editor-heading button,
+.element-editor-format-row > button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #71717a;
+  cursor: pointer;
+}
+
+.element-editor-heading button:hover,
+.element-editor-format-row > button:hover {
+  background: #f2f2f0;
+  color: #27272a;
+}
+
+.element-editor-format-row > button.is-active {
+  background: #eceafe;
+  color: #5b4ed0;
+}
+
+.element-editor-fields {
+  display: grid;
+  max-height: min(360px, calc(100vh - 170px));
+  gap: 10px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.element-editor-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.element-editor-field > span {
+  color: #85858a;
+  font-size: 0.62rem;
+  font-weight: 650;
+}
+
+.element-editor-field input,
+.element-editor-field select,
+.element-editor-compact-field,
+.element-editor-number {
+  height: 32px;
+  min-width: 0;
+  border: 1px solid #dededb;
+  border-radius: 7px;
+  background: #fafaf9;
+  color: #2e2e32;
+  font: 500 0.72rem/1 system-ui, sans-serif;
+  outline: none;
+}
+
+.element-editor-field input,
+.element-editor-field select {
+  width: 100%;
+  padding: 0 9px;
+}
+
+.element-editor-field input:focus,
+.element-editor-field select:focus,
+.element-editor-compact-field:focus-within {
+  border-color: #8175e5;
+  box-shadow: 0 0 0 2px rgba(99, 82, 211, 0.12);
+}
+
+.element-editor-format-row {
+  gap: 5px;
+}
+
+.element-editor-compact-field {
+  display: flex;
+  width: 76px;
+  align-items: center;
+  margin-left: 3px;
+}
+
+.element-editor-compact-field input {
+  width: 50px;
+  border: 0;
+  background: transparent;
+  padding: 0 3px 0 9px;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+.element-editor-compact-field span,
+.element-editor-number i {
+  color: #929297;
+  font-size: 0.62rem;
+  font-style: normal;
+}
+
+.element-editor-color {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  margin-left: auto;
+  overflow: hidden;
+  border: 1px solid #dededb;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.element-editor-color input {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.element-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.element-editor-group {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #efefed;
+  padding-top: 10px;
+}
+
+.element-editor-group h4 {
+  margin: 0;
+  color: #69696e;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.element-editor-toggle {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #68686d;
+  font-size: 0.67rem;
+  font-weight: 650;
+}
+
+.element-editor-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: #6154d3;
+}
+
+.element-editor-color-field {
+  display: flex;
+  height: 32px;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  border: 1px solid #dededb;
+  border-radius: 7px;
+  background: #fafaf9;
+  padding: 0 8px 0 4px;
+}
+
+.element-editor-color-field input {
+  width: 25px;
+  height: 25px;
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.element-editor-color-field code {
+  min-width: 0;
+  overflow: hidden;
+  color: #77777c;
+  font: 500 0.59rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.element-editor-number input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 0 4px 0 9px;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+.element-editor-number i {
+  padding-right: 8px;
+}
+
+.element-editor-empty {
+  margin: 2px 0;
+  color: #848489;
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.element-editor-actions {
+  justify-content: flex-end;
+  gap: 7px;
+  border-top: 1px solid #ededeb;
+  padding: 9px 11px;
+}
+
+.element-editor-actions button {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid #dededb;
+  border-radius: 7px;
+  background: #fff;
+  color: #55555a;
+  padding: 0 11px;
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.element-editor-actions button.is-primary {
+  border-color: #6154d3;
+  background: #6154d3;
+  color: #fff;
+}
+
+.element-editor-actions button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+@keyframes element-editor-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .browser-bar {

@@ -1,0 +1,20 @@
+export { createElementEditor } from "./editor.ts";
+export type {
+  ElementChangeSet,
+  ElementEditChangeInput,
+  ElementEditErrorCode,
+  ElementEditGroup,
+  ElementEditProperty,
+  ElementEditPropertyId,
+  ElementEditPropertyKey,
+  ElementEditPropertyValue,
+  ElementEditResult,
+  ElementEditSchema,
+  ElementEditSubject,
+  ElementEditor,
+  ElementEditorEditingState,
+  ElementEditorIdleState,
+  ElementEditorOptions,
+  ElementEditorState,
+  ElementPropertyChange,
+} from "./types.ts";

@@ -18,6 +18,8 @@ export interface ElementInspectionState {
 
 export interface ElementInspector {
   setPickingEnabled(enabled: boolean): void;
+  /** 重新读取当前 hover 与激活元素的几何信息。 */
+  refresh(): void;
   /** 确认全部激活选择并清空激活态；没有激活选择时返回空数组。 */
   confirmActiveSelections(): ElementSelection[];
   destroy(): void;

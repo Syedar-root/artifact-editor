@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "node server.js",
     "build": "vite build",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test:editor": "node --experimental-strip-types --test tests/element-editor.test.mjs",
     "test:inspector": "node --experimental-strip-types --test tests/element-inspector-gap.test.mjs",
     "typecheck": "tsc --noEmit",
     "start": "node server.js --production"

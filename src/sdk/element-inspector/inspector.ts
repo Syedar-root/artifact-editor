@@ -146,6 +146,7 @@ export function createElementInspector({
 
   return {
     setPickingEnabled,
+    refresh,
     confirmActiveSelections() {
       const selections = activeInspections.map(({ selection }) => selection);
       clearActiveSelections();
