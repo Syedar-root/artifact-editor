@@ -1,4 +1,9 @@
-import type { BoxEdges, BoxRect, ElementInspection } from "../sdk/element-inspector";
+import type {
+  BoxEdges,
+  BoxRect,
+  ElementInspection,
+  ElementInspectionState,
+} from "../sdk/element-inspector";
 import type {
   ElementInspectorOverlay,
   ElementInspectorOverlayOptions,
@@ -196,18 +201,65 @@ export function createElementInspectorOverlay({
     }
   }
 
-  function render(inspection: ElementInspection | null) {
-    if (!inspection) {
-      clear();
-      return;
-    }
+  function appendOutline(
+    document: Document,
+    overlayRoot: HTMLDivElement,
+    rect: BoxRect,
+    color = theme.selection,
+    width = 1,
+  ) {
+    const outline = document.createElement("div");
+    outline.style.cssText = [
+      "position:fixed",
+      `left:${rect.left}px`,
+      `top:${rect.top}px`,
+      `width:${rect.width}px`,
+      `height:${rect.height}px`,
+      `outline:${width}px solid ${color}`,
+      `outline-offset:${theme.outlineOffset}px`,
+      "box-sizing:border-box",
+    ].join(";");
+    overlayRoot.append(outline);
+  }
 
-    const document = inspection.element.ownerDocument;
-    const overlayRoot = mount(document);
+  function appendLabel(
+    document: Document,
+    overlayRoot: HTMLDivElement,
+    rect: BoxRect,
+    text: string,
+    background = theme.selection,
+  ) {
+    const label = document.createElement("div");
+    const labelTop = rect.top >= theme.labelHeight + theme.labelGap + 4
+      ? rect.top - theme.labelHeight - theme.labelGap
+      : rect.top + rect.height + theme.labelGap;
+    label.textContent = text;
+    label.style.cssText = [
+      "position:fixed",
+      `left:${Math.round(Math.max(4, rect.left))}px`,
+      `top:${Math.round(Math.max(4, labelTop))}px`,
+      "max-width:calc(100vw - 8px)",
+      "padding:6px 9px",
+      "border-radius:5px",
+      `background:${background}`,
+      `color:${theme.labelForeground}`,
+      `font:600 12px/1.45 ${theme.fontFamily}`,
+      "-webkit-font-smoothing:antialiased",
+      "text-rendering:optimizeLegibility",
+      "white-space:nowrap",
+      "overflow:hidden",
+      "text-overflow:ellipsis",
+      "box-shadow:0 2px 6px rgba(13,86,139,.18)",
+    ].join(";");
+    overlayRoot.append(label);
+  }
+
+  function appendDetailedInspection(
+    document: Document,
+    overlayRoot: HTMLDivElement,
+    inspection: ElementInspection,
+  ) {
     const model = inspection.boxModel;
-    overlayRoot.replaceChildren();
-    overlayRoot.style.display = "block";
-
     appendRects(edgeRects(model.rect, model.margin, true), theme.marginFill);
     appendRects(edgeRects(model.rect, model.border), theme.borderFill);
     const paddingBox = inset(model.rect, model.border);
@@ -222,42 +274,67 @@ export function createElementInspectorOverlay({
       if (gapLayer) overlayRoot.append(gapLayer);
     }
 
-    const outline = document.createElement("div");
-    outline.style.cssText = [
-      "position:fixed",
-      `left:${model.rect.left}px`,
-      `top:${model.rect.top}px`,
-      `width:${model.rect.width}px`,
-      `height:${model.rect.height}px`,
-      `outline:1px solid ${theme.selection}`,
-      `outline-offset:${theme.outlineOffset}px`,
-      "box-sizing:border-box",
-    ].join(";");
-    overlayRoot.append(outline);
+    appendOutline(document, overlayRoot, model.rect, theme.selection, 2);
+    appendLabel(
+      document,
+      overlayRoot,
+      model.rect,
+      `${inspection.selection.hint} · ${Math.round(model.rect.width)}×${Math.round(model.rect.height)}`,
+    );
+  }
 
-    const label = document.createElement("div");
-    const labelTop = model.rect.top >= theme.labelHeight + theme.labelGap + 4
-      ? model.rect.top - theme.labelHeight - theme.labelGap
-      : model.rect.top + model.rect.height + theme.labelGap;
-    label.textContent = `${inspection.selection.hint} · ${Math.round(model.rect.width)}×${Math.round(model.rect.height)}`;
-    label.style.cssText = [
-      "position:fixed",
-      `left:${Math.round(Math.max(4, model.rect.left))}px`,
-      `top:${Math.round(Math.max(4, labelTop))}px`,
-      "max-width:calc(100vw - 8px)",
-      "padding:6px 9px",
-      "border-radius:5px",
-      `background:${theme.selection}`,
-      `color:${theme.labelForeground}`,
-      `font:600 12px/1.45 ${theme.fontFamily}`,
-      "-webkit-font-smoothing:antialiased",
-      "text-rendering:optimizeLegibility",
-      "white-space:nowrap",
-      "overflow:hidden",
-      "text-overflow:ellipsis",
-      "box-shadow:0 2px 6px rgba(13,86,139,.18)",
-    ].join(";");
-    overlayRoot.append(label);
+  function render({ hoveredInspection, activeInspections }: ElementInspectionState) {
+    const firstInspection = activeInspections[0] ?? hoveredInspection;
+    if (!firstInspection) {
+      clear();
+      return;
+    }
+
+    const document = firstInspection.element.ownerDocument;
+    const overlayRoot = mount(document);
+    overlayRoot.replaceChildren();
+    overlayRoot.style.display = "block";
+
+    if (activeInspections.length === 1) {
+      appendDetailedInspection(document, overlayRoot, activeInspections[0]);
+    } else if (activeInspections.length > 1) {
+      for (const activeInspection of activeInspections) {
+        const highlight = createLayer(document, activeInspection.boxModel.rect, theme.contentFill);
+        if (highlight) overlayRoot.append(highlight);
+        appendOutline(document, overlayRoot, activeInspection.boxModel.rect, theme.selection, 2);
+      }
+
+      const left = Math.min(...activeInspections.map(({ boxModel }) => boxModel.rect.left));
+      const top = Math.min(...activeInspections.map(({ boxModel }) => boxModel.rect.top));
+      const right = Math.max(
+        ...activeInspections.map(({ boxModel }) => boxModel.rect.left + boxModel.rect.width),
+      );
+      const bottom = Math.max(
+        ...activeInspections.map(({ boxModel }) => boxModel.rect.top + boxModel.rect.height),
+      );
+      appendLabel(
+        document,
+        overlayRoot,
+        { left, top, width: right - left, height: bottom - top },
+        `${activeInspections.length} 个元素`,
+      );
+    } else if (hoveredInspection) {
+      appendDetailedInspection(document, overlayRoot, hoveredInspection);
+    }
+
+    if (hoveredInspection && activeInspections.length > 0) {
+      const hoverRect = hoveredInspection.boxModel.rect;
+      const hoverHighlight = createLayer(document, hoverRect, theme.hoverFill);
+      if (hoverHighlight) overlayRoot.append(hoverHighlight);
+      appendOutline(document, overlayRoot, hoverRect, theme.hoverSelection);
+      appendLabel(
+        document,
+        overlayRoot,
+        hoverRect,
+        `${hoveredInspection.selection.hint} · ${Math.round(hoverRect.width)}×${Math.round(hoverRect.height)}`,
+        theme.hoverSelection,
+      );
+    }
   }
 
   function handleFrameLoad() {

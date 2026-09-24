@@ -2,6 +2,8 @@ import type { ElementInspectorOverlayTheme } from "./types";
 
 export const figmaInspectorTheme: ElementInspectorOverlayTheme = {
   selection: "#0d99ff",
+  hoverSelection: "rgba(13, 153, 255, 0.72)",
+  hoverFill: "rgba(13, 153, 255, 0.025)",
   marginFill: "rgba(255, 99, 92, 0.10)",
   marginAccent: "#f05252",
   borderFill: "rgba(13, 153, 255, 0.10)",

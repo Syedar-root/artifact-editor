@@ -4,6 +4,7 @@ export type {
   BoxRect,
   ElementBoxModel,
   ElementInspection,
+  ElementInspectionState,
   ElementInspector,
   ElementInspectorOptions,
   ElementSelection,

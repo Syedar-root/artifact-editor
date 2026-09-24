@@ -29,7 +29,11 @@ import {
 } from "./element-inspector-overlay";
 import type { ElementInspectorOverlay } from "./element-inspector-overlay";
 import { createElementInspector } from "./sdk/element-inspector";
-import type { ElementInspector, ElementSelection } from "./sdk/element-inspector";
+import type {
+  ElementInspection,
+  ElementInspector,
+  ElementSelection,
+} from "./sdk/element-inspector";
 
 type MessageRole = "user" | "agent";
 
@@ -128,6 +132,7 @@ function App() {
   const [copied, setCopied] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [isElementPicking, setIsElementPicking] = useState(false);
+  const [activeElements, setActiveElements] = useState<ElementInspection[]>([]);
   const [selectedElements, setSelectedElements] = useState<SelectedElementItem[]>([]);
   const [previewKey, setPreviewKey] = useState(0);
   const [codeTree, setCodeTree] = useState<FileTreeNode[]>([]);
@@ -202,15 +207,11 @@ function App() {
     });
     const inspector = createElementInspector({
       iframe,
-      onInspect: overlay.render,
-      onSelect(selection: ElementSelection) {
-        selectedElementKeyRef.current += 1;
-        setSelectedElements((current) => [
-          ...current,
-          { ...selection, key: selectedElementKeyRef.current },
-        ]);
+      onInspectionStateChange(state) {
+        overlay.render(state);
+        setActiveElements(state.activeInspections);
       },
-      onCancel() {
+      onPickingCancel() {
         setIsElementPicking(false);
       },
     });
@@ -228,8 +229,18 @@ function App() {
   useEffect(() => {
     const active = isElementPicking && view === "preview";
     elementInspectorOverlayRef.current?.setActive(active);
-    elementInspectorRef.current?.setEnabled(active);
+    elementInspectorRef.current?.setPickingEnabled(active);
   }, [isElementPicking, previewKey, view]);
+
+  function addActiveElementsToSelectionList() {
+    const selections = elementInspectorRef.current?.confirmActiveSelections() ?? [];
+    if (selections.length === 0) return;
+    const items = selections.map((selection) => {
+      selectedElementKeyRef.current += 1;
+      return { ...selection, key: selectedElementKeyRef.current };
+    });
+    setSelectedElements((current) => [...current, ...items]);
+  }
 
   useEffect(() => {
     if (view !== "code") return undefined;
@@ -724,6 +735,27 @@ function App() {
           </div>
 
           <div className="composer-wrap">
+            {activeElements.length > 0 && (
+              <section className="active-element-panel" aria-label="当前激活元素">
+                <span className="selected-element-icon" aria-hidden="true">
+                  <ScanSearch size={13} />
+                </span>
+                {activeElements.length === 1 ? (
+                  <code title={activeElements[0].selection.hint}>
+                    {activeElements[0].selection.hint}
+                  </code>
+                ) : (
+                  <span className="active-element-count">
+                    已激活 {activeElements.length} 个元素
+                  </span>
+                )}
+                <button type="button" onClick={addActiveElementsToSelectionList}>
+                  {activeElements.length === 1
+                    ? "添加到列表"
+                    : `添加 ${activeElements.length} 个到列表`}
+                </button>
+              </section>
+            )}
             {selectedElements.length > 0 && (
               <section className="selected-elements-panel" aria-label="已选元素">
                 <div className="selected-elements-heading">
@@ -803,8 +835,12 @@ function App() {
               </div>
             </div>
             <p className="composer-hint">
-              {isElementPicking
-                ? "点击预览中的元素，可连续选择 · Esc 完成"
+              {activeElements.length > 1
+                ? "多选模式 · Ctrl / Command 单击可追加或取消"
+                : activeElements.length === 1
+                ? "元素已激活 · Ctrl / Command 单击可追加多选"
+                : isElementPicking
+                ? "点击激活元素 · Ctrl / Command 单击多选 · Esc 完成"
                 : "Enter 发送 · Shift + Enter 换行"}
             </p>
           </div>

@@ -597,6 +597,53 @@ body.is-resizing-panels * {
   box-shadow: 0 2px 8px rgba(13, 85, 135, 0.05);
 }
 
+.active-element-panel {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(13, 153, 255, 0.38);
+  border-radius: 11px;
+  background: #f2f9ff;
+  padding: 7px 8px;
+  box-shadow: 0 2px 8px rgba(13, 85, 135, 0.06);
+}
+
+.active-element-panel code {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: #24485f;
+  font: 600 0.68rem/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.active-element-count {
+  min-width: 0;
+  flex: 1;
+  color: #24485f;
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.active-element-panel > button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 7px;
+  background: #0d99ff;
+  color: #fff;
+  padding: 6px 9px;
+  cursor: pointer;
+  font-size: 0.66rem;
+  font-weight: 650;
+}
+
+.active-element-panel > button:hover {
+  background: #0788e4;
+}
+
 .selected-elements-heading,
 .selected-elements-heading > span,
 .selected-element-item {

@@ -1,4 +1,4 @@
-import { calculateGapRects } from "./gap-geometry";
+import { calculateGapRects } from "./gap-geometry.ts";
 import type { BoxEdges, BoxRect, ElementBoxModel } from "./types";
 
 function pixels(value: string): number {

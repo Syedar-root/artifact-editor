@@ -1,7 +1,9 @@
-import type { ElementInspection } from "../sdk/element-inspector";
+import type { ElementInspectionState } from "../sdk/element-inspector";
 
 export interface ElementInspectorOverlayTheme {
   selection: string;
+  hoverSelection: string;
+  hoverFill: string;
   marginFill: string;
   marginAccent: string;
   borderFill: string;
@@ -21,7 +23,7 @@ export interface ElementInspectorOverlayTheme {
 
 export interface ElementInspectorOverlay {
   setActive(active: boolean): void;
-  render(inspection: ElementInspection | null): void;
+  render(state: ElementInspectionState): void;
   destroy(): void;
 }
 

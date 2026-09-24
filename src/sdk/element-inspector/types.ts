@@ -11,16 +11,23 @@ export interface ElementInspection {
   boxModel: ElementBoxModel;
 }
 
+export interface ElementInspectionState {
+  hoveredInspection: ElementInspection | null;
+  activeInspections: ElementInspection[];
+}
+
 export interface ElementInspector {
-  setEnabled(enabled: boolean): void;
+  setPickingEnabled(enabled: boolean): void;
+  /** 确认全部激活选择并清空激活态；没有激活选择时返回空数组。 */
+  confirmActiveSelections(): ElementSelection[];
   destroy(): void;
 }
 
 export interface ElementInspectorOptions {
   iframe: HTMLIFrameElement;
-  onSelect(selection: ElementSelection): void;
-  onInspect?(inspection: ElementInspection | null): void;
-  onCancel?(): void;
+  /** hover 预览与激活选择任一发生变化时触发。 */
+  onInspectionStateChange?(state: ElementInspectionState): void;
+  onPickingCancel?(): void;
 }
 
 export interface BoxEdges {

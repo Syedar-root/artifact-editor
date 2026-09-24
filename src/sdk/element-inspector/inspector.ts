@@ -1,5 +1,5 @@
-import { readBoxModel } from "./box-model";
-import { describeElement } from "./selection";
+import { readBoxModel } from "./box-model.ts";
+import { describeElement } from "./selection.ts";
 import type { ElementInspection, ElementInspector, ElementInspectorOptions } from "./types";
 
 function eventElement(event: Event): Element | null {
@@ -11,14 +11,14 @@ function eventElement(event: Event): Element | null {
 
 export function createElementInspector({
   iframe,
-  onSelect,
-  onInspect,
-  onCancel,
+  onInspectionStateChange,
+  onPickingCancel,
 }: ElementInspectorOptions): ElementInspector {
   let enabled = false;
   let frameDocument: Document | null = null;
   let frameWindow: Window | null = null;
-  let hoveredElement: Element | null = null;
+  let hoveredInspection: ElementInspection | null = null;
+  let activeInspections: ElementInspection[] = [];
 
   function inspect(element: Element): ElementInspection {
     return {
@@ -28,15 +28,41 @@ export function createElementInspector({
     };
   }
 
+  function emitInspectionState() {
+    onInspectionStateChange?.({
+      hoveredInspection,
+      activeInspections: [...activeInspections],
+    });
+  }
+
   function show(element: Element) {
-    if (element === hoveredElement) return;
-    hoveredElement = element;
-    onInspect?.(inspect(element));
+    if (element === hoveredInspection?.element) return;
+    hoveredInspection = activeInspections.some((active) => active.element === element)
+      ? null
+      : inspect(element);
+    emitInspectionState();
+  }
+
+  function clearHoveredInspection() {
+    if (!hoveredInspection) return;
+    hoveredInspection = null;
+    emitInspectionState();
+  }
+
+  function clearActiveSelections() {
+    if (activeInspections.length === 0) return;
+    activeInspections = [];
+    hoveredInspection = null;
+    emitInspectionState();
   }
 
   function handlePointerOver(event: PointerEvent) {
     const element = eventElement(event);
     if (element) show(element);
+  }
+
+  function handlePointerOut(event: PointerEvent) {
+    if (event.relatedTarget === null) clearHoveredInspection();
   }
 
   function handleClick(event: MouseEvent) {
@@ -45,30 +71,46 @@ export function createElementInspector({
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
-    onSelect(describeElement(element));
+    const inspection = inspect(element);
+    if (event.ctrlKey || event.metaKey) {
+      const activeIndex = activeInspections.findIndex((active) => active.element === element);
+      activeInspections = activeIndex >= 0
+        ? activeInspections.filter((_, index) => index !== activeIndex)
+        : [...activeInspections, inspection];
+    } else {
+      activeInspections = [inspection];
+    }
+    hoveredInspection = activeInspections.some((active) => active.element === element)
+      ? null
+      : inspection;
+    emitInspectionState();
   }
 
   function handleKeyDown(event: KeyboardEvent) {
     if (event.key !== "Escape") return;
     event.preventDefault();
-    setEnabled(false);
-    onCancel?.();
+    setPickingEnabled(false);
+    onPickingCancel?.();
   }
 
   function refresh() {
-    if (hoveredElement) onInspect?.(inspect(hoveredElement));
+    if (hoveredInspection) hoveredInspection = inspect(hoveredInspection.element);
+    activeInspections = activeInspections.map(({ element }) => inspect(element));
+    if (hoveredInspection || activeInspections.length > 0) emitInspectionState();
   }
 
   function detach() {
     frameDocument?.removeEventListener("pointerover", handlePointerOver, true);
+    frameDocument?.removeEventListener("pointerout", handlePointerOut, true);
     frameDocument?.removeEventListener("click", handleClick, true);
     frameDocument?.removeEventListener("keydown", handleKeyDown, true);
     frameWindow?.removeEventListener("scroll", refresh, true);
     frameWindow?.removeEventListener("resize", refresh);
-    onInspect?.(null);
     frameDocument = null;
     frameWindow = null;
-    hoveredElement = null;
+    hoveredInspection = null;
+    activeInspections = [];
+    emitInspectionState();
   }
 
   function attach() {
@@ -82,13 +124,14 @@ export function createElementInspector({
     frameWindow = window;
 
     document.addEventListener("pointerover", handlePointerOver, true);
+    document.addEventListener("pointerout", handlePointerOut, true);
     document.addEventListener("click", handleClick, true);
     document.addEventListener("keydown", handleKeyDown, true);
     window.addEventListener("scroll", refresh, true);
     window.addEventListener("resize", refresh);
   }
 
-  function setEnabled(nextEnabled: boolean) {
+  function setPickingEnabled(nextEnabled: boolean) {
     if (enabled === nextEnabled) return;
     enabled = nextEnabled;
     if (enabled) attach();
@@ -102,7 +145,12 @@ export function createElementInspector({
   iframe.addEventListener("load", handleFrameLoad);
 
   return {
-    setEnabled,
+    setPickingEnabled,
+    confirmActiveSelections() {
+      const selections = activeInspections.map(({ selection }) => selection);
+      clearActiveSelections();
+      return selections;
+    },
     destroy() {
       enabled = false;
       detach();
