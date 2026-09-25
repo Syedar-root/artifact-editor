@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { PI_CONTAINER_ID } from "./pi-sessions.js";
 
 export const SANDBOX_WORKSPACE_ROOT = "/workspace";
@@ -9,6 +10,9 @@ const PREVIEW_PORT_START = 5173;
 const PREVIEW_PORT_END = 5999;
 const MAX_DOCKER_OUTPUT = 4 * 1024 * 1024;
 const TECHNOLOGY_STACKS = new Set(["html", "react", "vue"]);
+const SDK_VITE_ADAPTER_PATH = fileURLToPath(
+  import.meta.resolve("@artifact-editor/sdk/vite"),
+);
 
 const DISCOVER_ARTIFACTS_SCRIPT = String.raw`
 const fs = require("node:fs");
@@ -287,6 +291,7 @@ fs.mkdirSync(configDirectory, { recursive: true });
 const imports = [
   'import { defineConfig } from "vite";',
   'import { fileURLToPath } from "node:url";',
+  'import { createArtifactInspectorVitePlugin } from "./artifact-editor-sdk-vite.mjs";',
   ...(technologyStack === "react" ? ['import react from "@vitejs/plugin-react";'] : []),
   ...(technologyStack === "vue" ? ['import vue from "@vitejs/plugin-vue";'] : []),
   ...(locatorMode === "code-inspector"
@@ -307,10 +312,9 @@ const plugins = [
   '    },',
   '  },',
   ...(locatorMode === "code-inspector" ? [
-    '  codeInspectorPlugin({',
-    '    bundler: "vite",',
-    '    hideConsole: true,',
-    '    behavior: { locate: false, copy: false },',
+    '  createArtifactInspectorVitePlugin({',
+    '    technologyStack,',
+    '    codeInspectorPlugin,',
     '  }),',
   ] : []),
   ...(technologyStack === "react" ? ['  react(),'] : []),
@@ -320,6 +324,7 @@ const config = [
   ...imports,
   'const root = fileURLToPath(new URL("..", import.meta.url));',
   'const previewPort = Number(process.env.ARTIFACT_PREVIEW_PORT);',
+  'const technologyStack = ' + JSON.stringify(technologyStack) + ';',
   'const proxyBase = "/proxy/" + previewPort + "/";',
   '',
   'export default defineConfig({',
@@ -526,6 +531,11 @@ export async function startArtifact(artifactId) {
   const previewPort = artifact.previewUrl.split("/")[2];
   const root = artifactRoot(artifactId);
   const previewWasRunning = await previewIsReachable(artifact.previewUrl);
+  await runDocker([
+    "cp",
+    SDK_VITE_ADAPTER_PATH,
+    `${PI_CONTAINER_ID}:${root}/.artifact/artifact-editor-sdk-vite.mjs`,
+  ]);
   const configOutput = await runDocker([
     "exec",
     PI_CONTAINER_ID,

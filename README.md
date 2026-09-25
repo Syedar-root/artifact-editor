@@ -7,7 +7,7 @@ apps/
   web/       React + Vite 宿主界面
   server/    Express、Artifact/Session 管理与沙箱代理
 packages/
-  source-locator/  早期源码定位实验（当前运行链路不加载）
+  sdk/       通用 DOM 选择、编辑、React hook 与 Vite Adapter
 ```
 
 ## 元素定位策略

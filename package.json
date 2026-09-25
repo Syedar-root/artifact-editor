@@ -8,16 +8,19 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -k -n server,web -c blue,green \"npm run dev:server\" \"npm run dev:web\"",
-    "dev:web": "npm run dev --workspace @artifact-editor/web",
-    "dev:server": "npm run dev --workspace @artifact-editor/server",
-    "build": "npm run build --workspace @artifact-editor/web",
-    "test": "npm run test --workspace @artifact-editor/source-locator && npm run test --workspace @artifact-editor/web",
-    "test:editor": "npm run test:editor --workspace @artifact-editor/web",
-    "test:inspector": "npm run test:inspector --workspace @artifact-editor/web",
-    "typecheck": "npm run typecheck --workspace @artifact-editor/web",
+    "dev": "npm run build:sdk && concurrently -k -n server,web -c blue,green \"npm run dev --workspace @artifact-editor/server\" \"npm run dev --workspace @artifact-editor/web\"",
+    "dev:web": "npm run build:sdk && npm run dev --workspace @artifact-editor/web",
+    "dev:server": "npm run build:sdk && npm run dev --workspace @artifact-editor/server",
+    "build": "npm run build:sdk && npm run build --workspace @artifact-editor/web",
+    "build:sdk": "npm run build --workspace @artifact-editor/sdk",
+    "prepare": "npm run build:sdk",
+    "test": "npm run test --workspace @artifact-editor/sdk && npm run test --workspace @artifact-editor/web",
+    "check:sdk": "npm run check --workspace @artifact-editor/sdk",
+    "test:editor": "npm run build:sdk && npm run test:editor --workspace @artifact-editor/web",
+    "test:inspector": "npm run build:sdk && npm run test:inspector --workspace @artifact-editor/web",
+    "typecheck": "npm run build:sdk && npm run typecheck --workspace @artifact-editor/web",
     "check:server": "npm run check --workspace @artifact-editor/server",
-    "start": "npm run start --workspace @artifact-editor/server"
+    "start": "npm run build:sdk && npm run start --workspace @artifact-editor/server"
   },
   "devDependencies": {
     "concurrently": "latest"

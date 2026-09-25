@@ -1,4 +1,4 @@
-export { createElementInspector } from "./inspector";
+export { createElementInspector } from "./inspector.ts";
 export type {
   BoxEdges,
   BoxRect,
@@ -8,4 +8,4 @@ export type {
   ElementInspector,
   ElementInspectorOptions,
   ElementSelection,
-} from "./types";
+} from "./types.ts";

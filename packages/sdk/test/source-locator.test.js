@@ -5,7 +5,7 @@ import {
   instrumentHtml,
   instrumentJavaScript,
   SOURCE_ATTRIBUTE,
-} from "../index.js";
+} from "../src/vite/source-locator.js";
 
 test("为静态 HTML 标签注入 source id 并保留原始位置", () => {
   const source = [

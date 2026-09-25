@@ -2,7 +2,7 @@
 
 调研日期：2026-09-25
 
-> 实施决策更新：后续讨论决定纯 HTML/原生 JavaScript 产物完全不注入源码属性，而是在选择元素时把祖先链路等运行时 DOM hint 直接交给 Agent。`code-inspector-plugin` 仅用于检测为 React/Vue 的产物。下文保留的是形成这一决策前的方案调研。
+> 实施决策更新：后续讨论决定纯 HTML/原生 JavaScript 产物完全不注入源码属性，而是在选择元素时把祖先链路等运行时 DOM hint 直接交给 Agent。`code-inspector-plugin` 仅用于检测为 React/Vue 的产物。原 `packages/source-locator` 实验已经并入 `@artifact-editor/sdk/vite/source-locator`，不在默认运行链路中启用。下文保留的是形成这一决策前的方案调研。
 
 ## 结论
 

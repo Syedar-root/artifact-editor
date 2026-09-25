@@ -1,4 +1,4 @@
-import type { ElementSelection } from "./types";
+import type { ElementSelection } from "./types.ts";
 
 const MAX_CLASS_NAMES = 3;
 const MAX_ANCESTOR_DEPTH = 5;

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { figmaInspectorTheme } from "../src/element-inspector-overlay/figma-theme.ts";
-import { createElementInspectorOverlay } from "../src/element-inspector-overlay/renderer.ts";
+import {
+  createElementInspectorOverlay,
+  figmaInspectorTheme,
+} from "@artifact-editor/sdk/overlay";
 
 class FakeNode {
   constructor(tagName) {

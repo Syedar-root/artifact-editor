@@ -1,4 +1,4 @@
-import type { ElementInspectionState } from "../sdk/element-inspector";
+import type { ElementInspectionState } from "../element-inspector/index.ts";
 
 export interface ElementInspectorOverlayTheme {
   selection: string;

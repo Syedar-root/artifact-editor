@@ -2,10 +2,10 @@
 
 > 这是早期源码映射实验。Artifact Editor 当前不再把它加载到 HTML 产物；HTML 项目改用无侵入的运行时 DOM hint，React/Vue 项目使用 `code-inspector-plugin`。
 
-`@artifact-editor/source-locator` 把静态 HTML 标签，以及 JavaScript 模板字符串中生成的 HTML/SVG，与原始源码位置关联起来。
+`@artifact-editor/sdk/vite/source-locator` 把静态 HTML 标签，以及 JavaScript 模板字符串中生成的 HTML/SVG，与原始源码位置关联起来。
 
 ```js
-import { artifactSourceLocator } from "@artifact-editor/source-locator";
+import { artifactSourceLocator } from "@artifact-editor/sdk/vite/source-locator";
 
 export default {
   plugins: [artifactSourceLocator()],

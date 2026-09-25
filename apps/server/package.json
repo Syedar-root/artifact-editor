@@ -9,6 +9,7 @@
     "check": "node --check src/server.js && node --check src/artifacts.js && node --check src/pi-sessions.js && node --check src/run-pi-agent.js && node --check src/sandbox-files.js"
   },
   "dependencies": {
+    "@artifact-editor/sdk": "0.1.0",
     "express": "latest"
   }
 }

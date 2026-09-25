@@ -11,6 +11,13 @@
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "paths": {
+      "@artifact-editor/sdk": ["../../packages/sdk/src/index.ts"],
+      "@artifact-editor/sdk/react": ["../../packages/sdk/src/react/index.ts"],
+      "@artifact-editor/sdk/overlay": ["../../packages/sdk/src/element-inspector-overlay/index.ts"],
+      "@artifact-editor/sdk/element-inspector": ["../../packages/sdk/src/element-inspector/index.ts"],
+      "@artifact-editor/sdk/element-editor": ["../../packages/sdk/src/element-editor/index.ts"]
+    },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,

@@ -3,12 +3,12 @@ import type {
   BoxRect,
   ElementInspection,
   ElementInspectionState,
-} from "../sdk/element-inspector";
+} from "../element-inspector/index.ts";
 import type {
   ElementInspectorOverlay,
   ElementInspectorOverlayOptions,
   ElementInspectorOverlayTheme,
-} from "./types";
+} from "./types.ts";
 
 interface EdgeMeasurement {
   value: number;

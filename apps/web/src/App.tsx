@@ -32,18 +32,8 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import {
-  createElementInspectorOverlay,
-  figmaInspectorTheme,
-} from "./element-inspector-overlay";
-import type { ElementInspectorOverlay } from "./element-inspector-overlay";
-import { createElementInspector } from "./sdk/element-inspector";
-import type {
-  ElementInspection,
-  ElementInspector,
-  ElementSelection,
-} from "./sdk/element-inspector";
-import { createElementEditor } from "./sdk/element-editor";
+import { useArtifactElementTools } from "@artifact-editor/sdk/react";
+import type { ElementSelection } from "@artifact-editor/sdk/element-inspector";
 import { readJsonResponse } from "./api-response";
 import type {
   ElementEditGroup,
@@ -51,10 +41,8 @@ import type {
   ElementEditPropertyId,
   ElementEditPropertyKey,
   ElementEditPropertyValue,
-  ElementEditor,
   ElementEditorEditingState,
-  ElementEditorState,
-} from "./sdk/element-editor";
+} from "@artifact-editor/sdk/element-editor";
 
 type MessageRole = "user" | "agent";
 
@@ -152,12 +140,6 @@ function formatSelectedElementContext(element: SelectedElementItem, index: numbe
   }
   return lines.join("\n");
 }
-
-const EMPTY_ELEMENT_EDITOR_STATE: ElementEditorState = {
-  status: "idle",
-  dirty: false,
-  properties: [],
-};
 
 function editorProperty(
   state: ElementEditorEditingState,
@@ -602,10 +584,6 @@ function App() {
   const [copied, setCopied] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [isElementPicking, setIsElementPicking] = useState(false);
-  const [activeElements, setActiveElements] = useState<ElementInspection[]>([]);
-  const [elementEditorState, setElementEditorState] = useState<ElementEditorState>(
-    EMPTY_ELEMENT_EDITOR_STATE,
-  );
   const [selectedElements, setSelectedElements] = useState<SelectedElementItem[]>([]);
   const [previewKey, setPreviewKey] = useState(0);
   const [codeTree, setCodeTree] = useState<FileTreeNode[]>([]);
@@ -629,11 +607,16 @@ function App() {
   const sendMessageRef = useRef<((messageOverride?: string) => Promise<string | null>) | null>(null);
   const workspaceRef = useRef<HTMLElement>(null);
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
-  const elementInspectorRef = useRef<ElementInspector | null>(null);
-  const elementInspectorOverlayRef = useRef<ElementInspectorOverlay | null>(null);
-  const elementEditorRef = useRef<ElementEditor | null>(null);
-  const editedElementRef = useRef<Element | null>(null);
   const selectedElementKeyRef = useRef(0);
+
+  const elementTools = useArtifactElementTools({
+    iframeRef: previewIframeRef,
+    enabled: view === "preview",
+    pickingEnabled: isElementPicking,
+    revision: previewKey,
+    onPickingCancel: () => setIsElementPicking(false),
+  });
+  const { activeElements, editorState: elementEditorState } = elementTools;
 
   const canSend = input.trim().length > 0 && !isThinking && !!activeArtifactId;
 
@@ -687,58 +670,8 @@ function App() {
     window.localStorage.setItem("artifact-chat-width", String(chatWidth));
   }, [chatWidth]);
 
-  useEffect(() => {
-    if (view !== "preview") return undefined;
-    const iframe = previewIframeRef.current;
-    if (!iframe) return undefined;
-
-    const overlay = createElementInspectorOverlay({
-      iframe,
-      theme: figmaInspectorTheme,
-    });
-    const editor = createElementEditor({
-      onStateChange: setElementEditorState,
-    });
-    const inspector = createElementInspector({
-      iframe,
-      onInspectionStateChange(state) {
-        overlay.render(state);
-        setActiveElements(state.activeInspections);
-        const nextTarget = state.activeInspections.length === 1
-          ? state.activeInspections[0]
-          : null;
-        if (editedElementRef.current !== (nextTarget?.element ?? null)) {
-          editor.setTarget(nextTarget);
-          editedElementRef.current = nextTarget?.element ?? null;
-        }
-      },
-      onPickingCancel() {
-        setIsElementPicking(false);
-      },
-    });
-
-    elementInspectorRef.current = inspector;
-    elementInspectorOverlayRef.current = overlay;
-    elementEditorRef.current = editor;
-    return () => {
-      inspector.destroy();
-      overlay.destroy();
-      editor.destroy();
-      if (elementInspectorRef.current === inspector) elementInspectorRef.current = null;
-      if (elementInspectorOverlayRef.current === overlay) elementInspectorOverlayRef.current = null;
-      if (elementEditorRef.current === editor) elementEditorRef.current = null;
-      editedElementRef.current = null;
-    };
-  }, [previewKey, view]);
-
-  useEffect(() => {
-    const active = isElementPicking && view === "preview";
-    elementInspectorOverlayRef.current?.setActive(active);
-    elementInspectorRef.current?.setPickingEnabled(active);
-  }, [isElementPicking, previewKey, view]);
-
   function addActiveElementsToSelectionList() {
-    const selections = elementInspectorRef.current?.confirmActiveSelections() ?? [];
+    const selections = elementTools.confirmSelections();
     if (selections.length === 0) return;
     const items = selections.map((selection) => {
       selectedElementKeyRef.current += 1;
@@ -748,18 +681,15 @@ function App() {
   }
 
   function closeElementEditor(commit: boolean) {
-    if (commit) elementEditorRef.current?.commit();
-    else elementEditorRef.current?.cancel();
-    editedElementRef.current = null;
-    elementInspectorRef.current?.confirmActiveSelections();
+    if (commit) elementTools.commitEdits();
+    else elementTools.cancelEdits();
   }
 
   function updateElementEditor(
     property: ElementEditPropertyId,
     value: ElementEditPropertyValue,
   ) {
-    const result = elementEditorRef.current?.update({ property, value });
-    if (result?.ok) elementInspectorRef.current?.refresh();
+    elementTools.updateProperty(property, value);
   }
 
   function elementEditorPosition(): {

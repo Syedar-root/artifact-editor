@@ -1,4 +1,4 @@
-import type { ElementInspectorOverlayTheme } from "./types";
+import type { ElementInspectorOverlayTheme } from "./types.ts";
 
 export const figmaInspectorTheme: ElementInspectorOverlayTheme = {
   selection: "#0d99ff",

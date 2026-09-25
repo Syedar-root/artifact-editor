@@ -1,6 +1,6 @@
 import { readBoxModel } from "./box-model.ts";
 import { describeElement } from "./selection.ts";
-import type { ElementInspection, ElementInspector, ElementInspectorOptions } from "./types";
+import type { ElementInspection, ElementInspector, ElementInspectorOptions } from "./types.ts";
 
 function eventElement(event: Event): Element | null {
   const target = event.target;

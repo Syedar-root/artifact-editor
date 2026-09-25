@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@artifact-editor/sdk": "0.1.0",
     "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest"

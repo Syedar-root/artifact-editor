@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createElementEditor } from "../src/sdk/element-editor/editor.ts";
+import { createElementEditor } from "@artifact-editor/sdk/element-editor";
 
 function createStyle(initial = {}) {
   const values = new Map(

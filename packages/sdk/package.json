@@ -1,0 +1,61 @@
+{
+  "name": "@artifact-editor/sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md",
+    "SOURCE_LOCATOR.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./element-editor": {
+      "types": "./dist/element-editor/index.d.ts",
+      "import": "./dist/element-editor/index.js"
+    },
+    "./element-inspector": {
+      "types": "./dist/element-inspector/index.d.ts",
+      "import": "./dist/element-inspector/index.js"
+    },
+    "./overlay": {
+      "types": "./dist/element-inspector-overlay/index.d.ts",
+      "import": "./dist/element-inspector-overlay/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./vite": {
+      "types": "./dist/vite/adapter.d.ts",
+      "import": "./dist/vite/adapter.js"
+    },
+    "./vite/source-locator": {
+      "types": "./dist/vite/source-locator.d.ts",
+      "import": "./dist/vite/source-locator.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "test": "npm run build && node --test test/*.test.js",
+    "check": "npm run build && node --check dist/vite/adapter.js && node --check dist/vite/source-locator.js"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "acorn": "latest",
+    "react": "latest",
+    "typescript": "latest"
+  },
+  "keywords": [
+    "artifact-editor",
+    "dom-inspector",
+    "vite-plugin",
+    "source-mapping"
+  ]
+}
