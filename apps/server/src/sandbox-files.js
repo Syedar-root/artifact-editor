@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
+import { artifactRoot } from "./artifacts.js";
 import { PI_CONTAINER_ID } from "./pi-sessions.js";
-
-export const SANDBOX_PROJECT_ROOT = "/workspace/html-app";
 
 const MAX_OUTPUT = 4 * 1024 * 1024;
 const CONTAINER_SCRIPT = String.raw`
@@ -11,7 +10,7 @@ const path = require("node:path");
 const root = path.resolve(process.argv[1]);
 const mode = process.argv[2];
 const requestedPath = process.argv[3] || "";
-const ignoredDirectories = new Set(["node_modules", ".git", "dist", ".vite"]);
+const ignoredDirectories = new Set(["node_modules", ".git", "dist", ".vite", ".artifact"]);
 const maxEntries = 1000;
 let entryCount = 0;
 
@@ -84,7 +83,8 @@ try {
 }
 `;
 
-function runContainer(mode, relativePath = "") {
+function runContainer(artifactId, mode, relativePath = "") {
+  const root = artifactRoot(artifactId);
   return new Promise((resolve, reject) => {
     const child = spawn(
       "docker",
@@ -94,7 +94,7 @@ function runContainer(mode, relativePath = "") {
         "node",
         "-e",
         CONTAINER_SCRIPT,
-        SANDBOX_PROJECT_ROOT,
+        root,
         mode,
         relativePath,
       ],
@@ -137,10 +137,10 @@ function runContainer(mode, relativePath = "") {
   });
 }
 
-export function readSandboxTree() {
-  return runContainer("tree");
+export function readSandboxTree(artifactId) {
+  return runContainer(artifactId, "tree");
 }
 
-export function readSandboxFile(relativePath) {
-  return runContainer("file", relativePath);
+export function readSandboxFile(artifactId, relativePath) {
+  return runContainer(artifactId, "file", relativePath);
 }

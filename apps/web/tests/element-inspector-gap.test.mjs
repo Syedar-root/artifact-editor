@@ -72,22 +72,86 @@ function createInspectorFixture() {
   return { element, secondElement, frameDocument, iframe };
 }
 
-test("元素选择结果只包含简短 hint，不包含内部文本", () => {
+test("元素选择结果包含祖先链路和受限的运行时上下文", () => {
+  const parent = {
+    tagName: "SECTION",
+    id: "dashboard",
+    classList: ["metrics"],
+    parentElement: null,
+  };
   const selection = describeElement({
     tagName: "ARTICLE",
     id: "hero",
     classList: ["card", "featured", "wide", "ignored"],
-    textContent: "这段很长的内容不应该进入选择结果",
+    parentElement: parent,
+    attributes: [
+      { name: "class", value: "card featured wide" },
+      { name: "aria-label", value: "核心指标" },
+    ],
+    textContent: "  核心指标   在线 128  ",
+    outerHTML: '<article class="card featured wide" aria-label="核心指标">在线 128</article>',
   });
 
   assert.deepEqual(selection, {
     tagName: "article",
     id: "hero",
     classNames: ["card", "featured", "wide"],
-    hint: "article#hero.card.featured.wide",
+    hint: "section#dashboard.metrics > article#hero.card.featured.wide",
+    domHint: {
+      path: "section#dashboard.metrics > article#hero.card.featured.wide",
+      ancestors: ["section#dashboard.metrics"],
+      attributes: { "aria-label": "核心指标" },
+      text: "核心指标 在线 128",
+      outerHTML: '<article class="card featured wide" aria-label="核心指标">在线 128</article>',
+    },
   });
-  assert.equal("text" in selection, false);
-  assert.equal("description" in selection, false);
+});
+
+test("没有稳定 id 时，hint 会携带父级和祖先元素", () => {
+  const main = { tagName: "MAIN", id: "app", classList: [], parentElement: null };
+  const section = {
+    tagName: "SECTION",
+    id: "",
+    classList: ["dashboard", "dark"],
+    parentElement: main,
+  };
+  const selection = describeElement({
+    tagName: "ARTICLE",
+    id: "",
+    classList: ["metric-card"],
+    parentElement: section,
+  });
+
+  assert.equal(selection.hint, "main#app > section.dashboard.dark > article.metric-card");
+  assert.deepEqual(selection.domHint.ancestors, ["main#app", "section.dashboard.dark"]);
+});
+
+test("元素选择结果会携带源码定位插件注入的 source id", () => {
+  const selection = describeElement({
+    tagName: "BUTTON",
+    id: "save",
+    classList: ["primary"],
+    getAttribute: (name) => name === "data-artifact-source" ? "s_abc123" : null,
+  });
+
+  assert.equal(selection.sourceId, "s_abc123");
+});
+
+test("元素选择结果会解析 Code Inspector 的源码位置", () => {
+  const selection = describeElement({
+    tagName: "BUTTON",
+    id: "save",
+    classList: ["primary"],
+    getAttribute: (name) => name === "data-insp-path"
+      ? "src/components/SaveButton.tsx:27:5:button"
+      : null,
+  });
+
+  assert.deepEqual(selection.source, {
+    file: "src/components/SaveButton.tsx",
+    line: 27,
+    column: 5,
+  });
 });
 
 test("单击只激活元素，确认选择后才产出列表项", () => {
@@ -115,6 +179,11 @@ test("单击只激活元素，确认选择后才产出列表项", () => {
       id: "save",
       classNames: ["primary"],
       hint: "button#save.primary",
+      domHint: {
+        path: "button#save.primary",
+        ancestors: [],
+        attributes: {},
+      },
     },
   ]);
   assert.deepEqual(states.at(-1).activeInspections, []);

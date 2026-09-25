@@ -2,7 +2,23 @@ export interface ElementSelection {
   tagName: string;
   id: string;
   classNames: string[];
+  /** 面向 Agent 的运行时 DOM 上下文，不依赖源码注入。 */
   hint: string;
+  domHint: {
+    path: string;
+    ancestors: string[];
+    attributes: Record<string, string>;
+    text?: string;
+    outerHTML?: string;
+  };
+  /** 兼容旧版 source locator。 */
+  sourceId?: string;
+  /** React/Vue 等框架定位插件给出的精确源码位置。 */
+  source?: {
+    file: string;
+    line: number;
+    column: number;
+  };
 }
 
 export interface ElementInspection {

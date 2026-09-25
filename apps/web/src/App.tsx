@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import type {
+  CSSProperties,
+  FormEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  ReactNode,
+} from "react";
 import {
   ArrowUp,
   Bold,
@@ -39,6 +44,7 @@ import type {
   ElementSelection,
 } from "./sdk/element-inspector";
 import { createElementEditor } from "./sdk/element-editor";
+import { readJsonResponse } from "./api-response";
 import type {
   ElementEditGroup,
   ElementEditProperty,
@@ -71,11 +77,27 @@ interface ApiMessage {
 
 interface SessionSummary {
   id: string;
+  artifactId: string;
   title: string;
   preview: string;
   updatedAt: string;
   messageCount: number;
 }
+
+interface ArtifactSummary {
+  id: string;
+  name: string;
+  status: "creating" | "ready" | "failed";
+  previewUrl: string;
+  createdAt: string;
+  updatedAt: string;
+  requestedStack: TechnologyStack;
+  detectedStack: TechnologyStack;
+  stackChanged: boolean;
+  locatorMode: "runtime-hint" | "code-inspector";
+}
+
+type TechnologyStack = "html" | "react" | "vue";
 
 interface FileTreeNode {
   name: string;
@@ -90,14 +112,46 @@ interface SelectedElementItem extends ElementSelection {
 
 const initialMessages: ChatMessage[] = [];
 
-const SANDBOX_PREVIEW_URL = "/proxy/5173/";
-
 const DEFAULT_CHAT_WIDTH = 420;
 const MIN_CHAT_WIDTH = 320;
 const MAX_CHAT_WIDTH = 640;
 const MIN_PREVIEW_WIDTH = 560;
 const RAIL_WIDTH = 220;
 const RESIZER_WIDTH = 7;
+const TECHNOLOGY_OPTIONS: Array<{
+  value: TechnologyStack;
+  label: string;
+  description: string;
+}> = [
+  { value: "html", label: "HTML + JavaScript", description: "无侵入运行时 DOM hint" },
+  { value: "react", label: "React", description: "Vite + Code Inspector 精确定位" },
+  { value: "vue", label: "Vue", description: "Vite + Code Inspector 精确定位" },
+];
+
+function technologyLabel(stack: TechnologyStack): string {
+  return TECHNOLOGY_OPTIONS.find((option) => option.value === stack)?.label || stack;
+}
+
+function formatSelectedElementContext(element: SelectedElementItem, index: number): string {
+  const lines = [
+    `[元素 ${index + 1}]`,
+    `DOM 路径：${element.domHint.path}`,
+  ];
+  if (element.domHint.ancestors.length > 0) {
+    lines.push(`祖先链路：${element.domHint.ancestors.join(" > ")}`);
+  }
+  if (Object.keys(element.domHint.attributes).length > 0) {
+    lines.push(`关键属性：${JSON.stringify(element.domHint.attributes)}`);
+  }
+  if (element.domHint.text) lines.push(`文本：${element.domHint.text}`);
+  if (element.domHint.outerHTML) lines.push(`HTML：${element.domHint.outerHTML}`);
+  if (element.source) {
+    lines.push(`源码位置：${element.source.file}:${element.source.line}:${element.source.column}`);
+  } else {
+    lines.push("源码位置：未注入，请根据上述运行时 DOM hint 在当前项目中定位");
+  }
+  return lines.join("\n");
+}
 
 const EMPTY_ELEMENT_EDITOR_STATE: ElementEditorState = {
   status: "idle",
@@ -526,6 +580,15 @@ function firstFilePath(nodes: FileTreeNode[]): string {
 }
 
 function App() {
+  const [artifacts, setArtifacts] = useState<ArtifactSummary[]>([]);
+  const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
+  const [artifactsLoading, setArtifactsLoading] = useState(true);
+  const [artifactsError, setArtifactsError] = useState("");
+  const [artifactMenuOpen, setArtifactMenuOpen] = useState(false);
+  const [creatingArtifact, setCreatingArtifact] = useState(false);
+  const [artifactDialogOpen, setArtifactDialogOpen] = useState(false);
+  const [artifactDraftName, setArtifactDraftName] = useState("");
+  const [artifactDraftStack, setArtifactDraftStack] = useState<TechnologyStack>("html");
   const [messages, setMessages] = useState(initialMessages);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -554,7 +617,6 @@ function App() {
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(
     () => new Set(["src", "public"]),
   );
-  const [version, setVersion] = useState(3);
   const [chatWidth, setChatWidth] = useState(() => {
     const savedWidth = Number(window.localStorage.getItem("artifact-chat-width"));
     return Number.isFinite(savedWidth) && savedWidth >= MIN_CHAT_WIDTH
@@ -573,7 +635,12 @@ function App() {
   const editedElementRef = useRef<Element | null>(null);
   const selectedElementKeyRef = useRef(0);
 
-  const canSend = input.trim().length > 0 && !isThinking;
+  const canSend = input.trim().length > 0 && !isThinking && !!activeArtifactId;
+
+  const activeArtifact = useMemo(
+    () => artifacts.find((artifact) => artifact.id === activeArtifactId) || null,
+    [activeArtifactId, artifacts],
+  );
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) || null,
@@ -583,19 +650,31 @@ function App() {
   useEffect(() => {
     const lifecycle = new AbortController();
 
-    async function hydrateSessions() {
+    async function hydrateArtifacts() {
       try {
-        const nextSessions = await fetchSessionList(lifecycle.signal);
-        if (nextSessions[0]) await openSession(nextSessions[0].id, lifecycle.signal);
+        const response = await fetch("/api/artifacts", { signal: lifecycle.signal });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "无法读取产物列表");
+        const nextArtifacts: ArtifactSummary[] = Array.isArray(payload.artifacts)
+          ? payload.artifacts
+          : [];
+        setArtifacts(nextArtifacts);
+        const savedArtifactId = window.localStorage.getItem("active-artifact-id");
+        const initialArtifact = nextArtifacts.find((artifact) => artifact.id === savedArtifactId)
+          || nextArtifacts[0];
+        if (initialArtifact) await activateArtifact(initialArtifact.id, lifecycle.signal);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        setSessionsError(error instanceof Error ? error.message : "无法读取会话历史");
+        setArtifactsError(error instanceof Error ? error.message : "无法读取产物列表");
       } finally {
-        if (!lifecycle.signal.aborted) setSessionsLoading(false);
+        if (!lifecycle.signal.aborted) {
+          setArtifactsLoading(false);
+          setSessionsLoading(false);
+        }
       }
     }
 
-    hydrateSessions();
+    hydrateArtifacts();
     return () => lifecycle.abort();
   }, []);
 
@@ -714,7 +793,7 @@ function App() {
     const lifecycle = new AbortController();
     loadSandboxCode(lifecycle.signal);
     return () => lifecycle.abort();
-  }, [view, codeRefreshKey]);
+  }, [activeArtifactId, view, codeRefreshKey]);
 
   useEffect(() => {
     if (!isResizing) return undefined;
@@ -777,13 +856,15 @@ function App() {
     return () => lifecycle.abort();
   }, []);
 
-  const projectTitle = useMemo(
-    () => (version > 3 ? `Creator workspace · v${version}` : "Creator workspace"),
-    [version],
-  );
-
-  async function fetchSessionList(signal?: AbortSignal): Promise<SessionSummary[]> {
-    const response = await fetch("/api/sessions", { signal });
+  async function fetchSessionList(
+    artifactId = activeArtifactId,
+    signal?: AbortSignal,
+  ): Promise<SessionSummary[]> {
+    if (!artifactId) return [];
+    const response = await fetch(
+      `/api/sessions?artifactId=${encodeURIComponent(artifactId)}`,
+      { signal },
+    );
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "无法读取会话历史");
     const nextSessions: SessionSummary[] = Array.isArray(payload.sessions) ? payload.sessions : [];
@@ -792,8 +873,12 @@ function App() {
     return nextSessions;
   }
 
-  async function openSession(sessionId: string, signal?: AbortSignal) {
-    if (!sessionId || isThinking) return;
+  async function openSession(
+    sessionId: string,
+    signal?: AbortSignal,
+    artifactId = activeArtifactId,
+  ) {
+    if (!sessionId || !artifactId || isThinking) return;
     setActiveSessionId(sessionId);
     setSelectedElements([]);
     setSessionLoading(true);
@@ -801,7 +886,10 @@ function App() {
     setSidebarOpen(false);
 
     try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { signal });
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}?artifactId=${encodeURIComponent(artifactId)}`,
+        { signal },
+      );
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "无法读取这个会话");
       const nextMessages = Array.isArray(payload.session?.messages)
@@ -828,6 +916,81 @@ function App() {
     }
   }
 
+  async function activateArtifact(artifactId: string, signal?: AbortSignal) {
+    if (!artifactId || isThinking) return;
+    setActiveArtifactId(artifactId);
+    window.localStorage.setItem("active-artifact-id", artifactId);
+    setArtifactMenuOpen(false);
+    setActiveSessionId(null);
+    setMessages([]);
+    setSessions([]);
+    setSelectedElements([]);
+    setSelectedFile("");
+    setFileContent("");
+    setCodeTree([]);
+    setSessionsLoading(true);
+    setSessionsError("");
+    setArtifactsError("");
+
+    try {
+      const response = await fetch(`/api/artifacts/${encodeURIComponent(artifactId)}/start`, {
+        method: "POST",
+        signal,
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "无法启动产物");
+      if (payload.artifact) {
+        setArtifacts((current) => current.map((artifact) =>
+          artifact.id === artifactId ? payload.artifact : artifact
+        ));
+      }
+      setPreviewKey((current) => current + 1);
+      const nextSessions = await fetchSessionList(artifactId, signal);
+      if (nextSessions[0]) await openSession(nextSessions[0].id, signal, artifactId);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setArtifactsError(error instanceof Error ? error.message : "无法打开产物");
+    } finally {
+      if (!signal?.aborted) setSessionsLoading(false);
+    }
+  }
+
+  function openArtifactDialog() {
+    if (creatingArtifact || isThinking) return;
+    setArtifactMenuOpen(false);
+    setArtifactDraftName("");
+    setArtifactDraftStack("html");
+    setArtifactDialogOpen(true);
+  }
+
+  async function createNewArtifact(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (creatingArtifact || isThinking) return;
+    const name = artifactDraftName.trim();
+    if (!name) return;
+    setCreatingArtifact(true);
+    setArtifactMenuOpen(false);
+    setArtifactsError("");
+    try {
+      const response = await fetch("/api/artifacts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, technologyStack: artifactDraftStack }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "无法创建产物");
+      const artifact: ArtifactSummary = payload.artifact;
+      setArtifacts((current) => [...current, artifact]);
+      setArtifactDialogOpen(false);
+      await activateArtifact(artifact.id);
+    } catch (error) {
+      setArtifactsError(error instanceof Error ? error.message : "无法创建产物");
+    } finally {
+      setCreatingArtifact(false);
+      setArtifactsLoading(false);
+    }
+  }
+
   function startNewSession() {
     if (isThinking) return;
     setActiveSessionId(null);
@@ -843,14 +1006,14 @@ function App() {
     signal?: AbortSignal,
     manageLoading = true,
   ) {
-    if (!filePath) return;
+    if (!filePath || !activeArtifactId) return;
     if (manageLoading) setCodeLoading(true);
     setCodeError("");
     setSelectedFile(filePath);
 
     try {
       const response = await fetch(
-        `/api/sandbox/file?path=${encodeURIComponent(filePath)}`,
+        `/api/sandbox/file?artifactId=${encodeURIComponent(activeArtifactId)}&path=${encodeURIComponent(filePath)}`,
         { signal },
       );
       const payload = await response.json();
@@ -866,10 +1029,14 @@ function App() {
   }
 
   async function loadSandboxCode(signal?: AbortSignal) {
+    if (!activeArtifactId) return;
     setCodeLoading(true);
     setCodeError("");
     try {
-      const response = await fetch("/api/sandbox/files", { signal });
+      const response = await fetch(
+        `/api/sandbox/files?artifactId=${encodeURIComponent(activeArtifactId)}`,
+        { signal },
+      );
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "无法读取沙箱代码目录");
       const nextTree: FileTreeNode[] = Array.isArray(payload.tree) ? payload.tree : [];
@@ -938,8 +1105,12 @@ function App() {
 
   async function sendMessage(messageOverride?: string): Promise<string | null> {
     const text = typeof messageOverride === "string" ? messageOverride.trim() : input.trim();
-    if (!text || isThinking) return null;
+    if (!text || isThinking || !activeArtifactId) return null;
     const targetSessionId = activeSessionId;
+    const selectedElementContext = selectedElements.map(formatSelectedElementContext);
+    const agentMessage = selectedElementContext.length > 0
+      ? `${text}\n\n以下是用户在预览中选择的运行时 DOM hint：\n\n${selectedElementContext.join("\n\n")}`
+      : text;
     const now = new Date().toLocaleTimeString("zh-CN", {
       hour: "2-digit",
       minute: "2-digit",
@@ -956,12 +1127,29 @@ function App() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: text, sessionId: targetSessionId }),
+        body: JSON.stringify({
+          message: agentMessage,
+          sessionId: targetSessionId,
+          artifactId: activeArtifactId,
+        }),
       });
-      const payload = await response.json();
+      const payload = await readJsonResponse<{
+        reply: string;
+        sessionId: string;
+        error?: string;
+        artifact?: ArtifactSummary;
+        runtimeWarning?: string;
+      }>(response);
       if (!response.ok) throw new Error(payload.error || "pi Agent 调用失败");
 
       setActiveSessionId(payload.sessionId);
+      if (payload.artifact) {
+        const updatedArtifact = payload.artifact;
+        setArtifacts((current) => current.map((artifact) =>
+          artifact.id === updatedArtifact.id ? updatedArtifact : artifact
+        ));
+      }
+      if (payload.runtimeWarning) setArtifactsError(payload.runtimeWarning);
 
       setMessages((current) => [
         ...current,
@@ -977,11 +1165,12 @@ function App() {
           details: ["来自沙箱中的 pi Agent"],
         },
       ]);
-      fetchSessionList().catch((error) => {
+      fetchSessionList(activeArtifactId).catch((error) => {
         setSessionsError(error instanceof Error ? error.message : "无法刷新会话历史");
       });
       return payload.reply;
     } catch (error) {
+      setInput((current) => current.trim() ? current : text);
       setMessages((current) => [
         ...current,
         {
@@ -1054,14 +1243,59 @@ function App() {
             <span>Artifact</span>
           </a>
           <span className="header-separator" />
-          <button className="project-switcher">
-            <span>{projectTitle}</span>
-            <ChevronDown size={14} />
-          </button>
+          <div className="artifact-switcher">
+            <button
+              className="project-switcher"
+              aria-haspopup="menu"
+              aria-expanded={artifactMenuOpen}
+              onClick={() => setArtifactMenuOpen((current) => !current)}
+            >
+              <span>
+                {artifactsLoading
+                  ? "正在读取产物…"
+                  : activeArtifact?.name || "选择产物"}
+              </span>
+              <ChevronDown size={14} />
+            </button>
+            {artifactMenuOpen && (
+              <div className="artifact-menu" role="menu">
+                <div className="artifact-menu-label">产物</div>
+                {artifacts.map((artifact) => (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={artifact.id === activeArtifactId ? "is-active" : ""}
+                    onClick={() => activateArtifact(artifact.id)}
+                    key={artifact.id}
+                  >
+                    <span>{artifact.name}</span>
+                    {artifact.id === activeArtifactId && <Check size={14} />}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="artifact-create-button"
+                  disabled={creatingArtifact}
+                  onClick={openArtifactDialog}
+                >
+                  <Plus size={14} />
+                  {creatingArtifact ? "正在创建…" : "创建产物"}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="header-actions">
-          <span className="save-state"><Check size={13} /> 已保存</span>
+          <span className={`save-state ${artifactsError ? "is-error" : ""}`}>
+            {artifactsError ? <X size={13} /> : <Check size={13} />}
+            {artifactsError || (activeArtifact
+              ? `${technologyLabel(activeArtifact.detectedStack)} · ${
+                activeArtifact.locatorMode === "code-inspector" ? "精确定位" : "DOM hint"
+              }${activeArtifact.stackChanged ? " · 已自动切换" : ""}`
+              : "未选择产物")}
+          </span>
           <button className="share-button">分享</button>
           <button className="avatar" aria-label="账户菜单">林</button>
         </div>
@@ -1090,7 +1324,7 @@ function App() {
                 className="new-session-button"
                 aria-label="新建对话"
                 title="新建对话"
-                disabled={isThinking}
+                disabled={isThinking || !activeArtifact}
                 onClick={startNewSession}
               >
                 <Plus size={17} />
@@ -1126,7 +1360,7 @@ function App() {
           </div>
 
           <div className="history-status">
-            <span /> 沙箱 session 已连接
+            <span /> {activeArtifact ? `${activeArtifact.name} 已连接` : "等待选择产物"}
           </div>
         </aside>
 
@@ -1241,7 +1475,14 @@ function App() {
                       <span className="selected-element-icon" aria-hidden="true">
                         <Code2 size={13} />
                       </span>
-                      <code title={element.hint}>{element.hint}</code>
+                      <code title={element.hint}>
+                        {element.hint}
+                        {element.source && (
+                          <small>
+                            {element.source.file}:{element.source.line}
+                          </small>
+                        )}
+                      </code>
                       <button
                         type="button"
                         aria-label={`移除 ${element.hint}`}
@@ -1366,7 +1607,12 @@ function App() {
               <button
                 className="icon-button"
                 aria-label="在新窗口打开"
-                onClick={() => window.open(SANDBOX_PREVIEW_URL, "_blank", "noopener,noreferrer")}
+                disabled={!activeArtifact}
+                onClick={() => activeArtifact && window.open(
+                  activeArtifact.previewUrl,
+                  "_blank",
+                  "noopener,noreferrer",
+                )}
               >
                 <ExternalLink size={16} />
               </button>
@@ -1379,7 +1625,8 @@ function App() {
                 <div className="browser-bar">
                   <div className="traffic-lights"><i /><i /><i /></div>
                   <div className="address-bar">
-                    <span className="secure-dot" /> {window.location.host}/proxy/5173
+                    <span className="secure-dot" /> {window.location.host}
+                    {activeArtifact?.previewUrl || "/未选择产物"}
                   </div>
                   <MoreHorizontal size={16} />
                 </div>
@@ -1387,8 +1634,8 @@ function App() {
                   key={previewKey}
                   ref={previewIframeRef}
                   className="sandbox-preview"
-                  src={SANDBOX_PREVIEW_URL}
-                  title="沙箱中的原生 HTML 项目"
+                  src={activeArtifact?.previewUrl || "about:blank"}
+                  title={activeArtifact ? `${activeArtifact.name} 预览` : "产物预览"}
                 />
                 {elementEditorState.status === "editing" && (() => {
                   const placement = elementEditorPosition();
@@ -1409,7 +1656,7 @@ function App() {
                 <aside className="code-sidebar" aria-label="沙箱代码目录">
                   <div className="code-sidebar-heading">
                     <span>EXPLORER</span>
-                    <strong>html-app</strong>
+                    <strong>{activeArtifact?.id || "未选择产物"}</strong>
                   </div>
                   <div className="file-tree">
                     {codeTree.length > 0 ? renderFileTree(codeTree) : (
@@ -1446,6 +1693,93 @@ function App() {
           </div>
         </section>
       </main>
+
+      {artifactDialogOpen && (
+        <div
+          className="artifact-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !creatingArtifact) {
+              setArtifactDialogOpen(false);
+            }
+          }}
+        >
+          <form
+            className="artifact-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="artifact-dialog-title"
+            onSubmit={createNewArtifact}
+          >
+            <div className="artifact-dialog-heading">
+              <div>
+                <span>NEW ARTIFACT</span>
+                <h2 id="artifact-dialog-title">创建产物</h2>
+              </div>
+              <button
+                type="button"
+                aria-label="关闭"
+                disabled={creatingArtifact}
+                onClick={() => setArtifactDialogOpen(false)}
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <label className="artifact-field">
+              <span>产物名称</span>
+              <input
+                autoFocus
+                required
+                maxLength={80}
+                value={artifactDraftName}
+                placeholder="例如：智慧市政运行监测报告"
+                onChange={(event) => setArtifactDraftName(event.target.value)}
+              />
+            </label>
+
+            <fieldset className="technology-options">
+              <legend>技术栈</legend>
+              {TECHNOLOGY_OPTIONS.map((option) => (
+                <label
+                  className={artifactDraftStack === option.value ? "is-selected" : ""}
+                  key={option.value}
+                >
+                  <input
+                    type="radio"
+                    name="technology-stack"
+                    value={option.value}
+                    checked={artifactDraftStack === option.value}
+                    onChange={() => setArtifactDraftStack(option.value)}
+                  />
+                  <span>
+                    <strong>{option.label}</strong>
+                    <small>{option.description}</small>
+                  </span>
+                  <i aria-hidden="true" />
+                </label>
+              ))}
+            </fieldset>
+
+            <p className="artifact-dialog-note">
+              启动预览和继续对话时会重新检测实际技术栈；如果项目中途切换，定位方式会自动降级或切换。
+            </p>
+
+            <div className="artifact-dialog-actions">
+              <button
+                type="button"
+                disabled={creatingArtifact}
+                onClick={() => setArtifactDialogOpen(false)}
+              >
+                取消
+              </button>
+              <button type="submit" disabled={creatingArtifact || !artifactDraftName.trim()}>
+                {creatingArtifact ? "正在创建…" : "创建并启动"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

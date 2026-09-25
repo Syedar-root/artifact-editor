@@ -1,0 +1,14 @@
+{
+  "name": "@artifact-editor/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js --production",
+    "check": "node --check src/server.js && node --check src/artifacts.js && node --check src/pi-sessions.js && node --check src/run-pi-agent.js && node --check src/sandbox-files.js"
+  },
+  "dependencies": {
+    "express": "latest"
+  }
+}

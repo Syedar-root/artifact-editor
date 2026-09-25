@@ -13,13 +13,19 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const ENV_FILE = path.join(__dirname, ".env");
+const ENV_FILE_CANDIDATES = [
+  path.resolve(__dirname, "../.env"),
+  path.resolve(__dirname, "../../../.env"),
+];
+const ENV_FILE = ENV_FILE_CANDIDATES.find((candidate) => fs.existsSync(candidate))
+  || ENV_FILE_CANDIDATES[0];
 const PROVIDER_ID = "dotenv-provider";
 
 function parseArguments(args) {
   const promptParts = [];
   let sessionId = "";
   let sessionName = "";
+  let workdir = "";
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -37,10 +43,15 @@ function parseArguments(args) {
       index += 1;
       continue;
     }
+    if (argument === "--workdir") {
+      workdir = args[index + 1] || "";
+      index += 1;
+      continue;
+    }
     promptParts.push(argument);
   }
 
-  return { prompt: promptParts.join(" ").trim(), sessionId, sessionName };
+  return { prompt: promptParts.join(" ").trim(), sessionId, sessionName, workdir };
 }
 
 function parseEnvFile(filePath) {
@@ -131,6 +142,7 @@ async function main() {
     console.log(`用法：
   node run-pi-agent.js "你的任务"
   node run-pi-agent.js --session-id <UUID> -- "继续这个任务"
+  node run-pi-agent.js --workdir /workspace/my-artifact -- "修改首页"
   "你的任务" | node run-pi-agent.js
   node run-pi-agent.js                 # 启动交互界面`);
     return;
@@ -161,7 +173,10 @@ async function main() {
   const prompt = parsedArguments.prompt || (!process.stdin.isTTY ? await readStdin() : "");
   const interactive = !prompt;
   const agentDir = `/tmp/pi-agent-launcher-${process.pid}-${randomBytes(6).toString("hex")}`;
-  const workdir = env.PI_WORKDIR || "/";
+  const workdir = parsedArguments.workdir || env.PI_WORKDIR || "/";
+  if (workdir !== "/" && !/^\/workspace\/[a-z0-9][a-z0-9-]{0,63}$/u.test(workdir)) {
+    throw new Error("Agent 工作目录必须是 /workspace 下的 artifact 目录");
+  }
 
   const modelConfig = {
     providers: {

@@ -21,6 +21,7 @@ body,
 }
 
 button,
+input,
 textarea {
   font: inherit;
 }
@@ -114,6 +115,73 @@ button {
   white-space: nowrap;
 }
 
+.artifact-switcher {
+  position: relative;
+  min-width: 0;
+}
+
+.artifact-menu {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 12px);
+  left: -10px;
+  width: 250px;
+  overflow: hidden;
+  border: 1px solid #dededb;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 14px 38px rgba(26, 26, 24, 0.14);
+  padding: 7px;
+}
+
+.artifact-menu-label {
+  padding: 7px 9px 5px;
+  color: #8a8984;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.artifact-menu button {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #333331;
+  padding: 7px 9px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+}
+
+.artifact-menu button:hover,
+.artifact-menu button.is-active {
+  background: #f2f1ed;
+}
+
+.artifact-menu button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-menu .artifact-create-button {
+  justify-content: flex-start;
+  margin-top: 5px;
+  border-top: 1px solid #ecece8;
+  border-radius: 0 0 8px 8px;
+  padding-top: 11px;
+  color: #545450;
+  font-weight: 600;
+}
+
 .header-actions {
   gap: 9px;
 }
@@ -122,6 +190,14 @@ button {
   gap: 5px;
   color: #797975;
   font-size: 0.76rem;
+}
+
+.save-state.is-error {
+  max-width: 360px;
+  color: #b04d42;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .share-button {
@@ -145,6 +221,199 @@ button {
   cursor: pointer;
   font-size: 0.76rem;
   font-weight: 650;
+}
+
+.artifact-dialog-backdrop {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(24, 24, 26, 0.42);
+  padding: 24px;
+  backdrop-filter: blur(4px);
+}
+
+.artifact-dialog {
+  width: min(480px, calc(100vw - 48px));
+  border: 1px solid #d9d9d5;
+  border-radius: 18px;
+  background: #fbfbf9;
+  box-shadow: 0 28px 80px rgba(22, 22, 20, 0.24);
+  padding: 22px;
+}
+
+.artifact-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.artifact-dialog-heading span {
+  color: #8a8984;
+  font-size: 0.62rem;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+}
+
+.artifact-dialog-heading h2 {
+  margin: 4px 0 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.65rem;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+}
+
+.artifact-dialog-heading button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #777771;
+  cursor: pointer;
+}
+
+.artifact-dialog-heading button:hover {
+  background: #ecece8;
+  color: #242426;
+}
+
+.artifact-field {
+  display: grid;
+  gap: 7px;
+}
+
+.artifact-field > span,
+.technology-options legend {
+  color: #555550;
+  font-size: 0.72rem;
+  font-weight: 680;
+}
+
+.artifact-field input {
+  width: 100%;
+  height: 42px;
+  border: 1px solid #cfceca;
+  border-radius: 10px;
+  outline: none;
+  background: #fff;
+  padding: 0 12px;
+  color: #242426;
+  font-size: 0.82rem;
+}
+
+.artifact-field input:focus {
+  border-color: #6d6d68;
+  box-shadow: 0 0 0 3px rgba(80, 80, 75, 0.09);
+}
+
+.technology-options {
+  display: grid;
+  gap: 7px;
+  margin: 18px 0 0;
+  border: 0;
+  padding: 0;
+}
+
+.technology-options legend {
+  margin-bottom: 8px;
+}
+
+.technology-options label {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #deded9;
+  border-radius: 11px;
+  background: #fff;
+  padding: 9px 11px;
+  cursor: pointer;
+}
+
+.technology-options label:hover,
+.technology-options label.is-selected {
+  border-color: #9a9993;
+  background: #f5f4f0;
+}
+
+.technology-options input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.technology-options label > span {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.technology-options strong {
+  color: #2c2c2e;
+  font-size: 0.78rem;
+}
+
+.technology-options small {
+  color: #85847e;
+  font-size: 0.66rem;
+}
+
+.technology-options i {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border: 1px solid #b8b7b1;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 4px #fff;
+}
+
+.technology-options label.is-selected i {
+  border-color: #242426;
+  background: #242426;
+}
+
+.artifact-dialog-note {
+  margin: 14px 1px 0;
+  color: #85847e;
+  font-size: 0.67rem;
+  line-height: 1.55;
+}
+
+.artifact-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.artifact-dialog-actions button {
+  height: 36px;
+  border: 1px solid #cecdc8;
+  border-radius: 9px;
+  background: #fff;
+  padding: 0 14px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.artifact-dialog-actions button[type="submit"] {
+  border-color: #242426;
+  background: #242426;
+  color: #fff;
+}
+
+.artifact-dialog-actions button:disabled,
+.artifact-dialog-heading button:disabled {
+  cursor: default;
+  opacity: 0.48;
 }
 
 .workspace {
@@ -722,13 +991,22 @@ body.is-resizing-panels * {
 }
 
 .selected-element-item code {
+  display: flex;
   min-width: 0;
   flex: 1;
+  flex-direction: column;
   overflow: hidden;
   color: #304553;
   font: 500 0.68rem/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.selected-element-item code small {
+  overflow: hidden;
+  color: #718591;
+  font: 500 0.6rem/1.25 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
 }
 
 .selected-element-item > button {

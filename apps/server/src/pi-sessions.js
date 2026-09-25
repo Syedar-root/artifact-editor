@@ -14,6 +14,8 @@ const path = require("node:path");
 
 const directory = process.argv[1];
 const requestedId = process.argv[2] || "";
+const workspaceRoot = path.resolve(process.argv[3]);
+const requestedArtifactId = process.argv[4] || "";
 
 function textFromContent(content) {
   if (typeof content === "string") return content.trim();
@@ -74,15 +76,21 @@ function readSession(filePath) {
   const firstUser = messages.find((message) => message.role === "user")?.text || "新对话";
   const lastMessage = messages.at(-1);
   const lastEntry = entries.at(-1);
+  const cwd = typeof header.cwd === "string" ? path.resolve(header.cwd) : "";
+  const relativeCwd = cwd ? path.relative(workspaceRoot, cwd) : "";
+  const artifactId = relativeCwd && !relativeCwd.startsWith("..") && !path.isAbsolute(relativeCwd)
+    ? relativeCwd.split(path.sep)[0]
+    : "";
 
   return {
     id: header.id,
+    artifactId,
     title: latestName || firstUser.slice(0, 48),
     preview: lastMessage?.text.slice(0, 88) || "暂无消息",
     createdAt: new Date(header.timestamp).toISOString(),
     updatedAt: new Date(lastEntry?.timestamp || header.timestamp).toISOString(),
     messageCount: messages.length,
-    cwd: header.cwd || "",
+    cwd,
     messages,
   };
 }
@@ -94,6 +102,7 @@ if (fs.existsSync(directory)) {
     .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
     .map((entry) => readSession(path.join(directory, entry.name)))
     .filter(Boolean)
+    .filter((session) => !requestedArtifactId || session.artifactId === requestedArtifactId)
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
 }
 
@@ -145,7 +154,7 @@ export function isValidSessionId(value) {
   return typeof value === "string" && SESSION_ID_PATTERN.test(value);
 }
 
-export async function readPiSessions(sessionId = "") {
+export async function readPiSessions(sessionId = "", artifactId = "") {
   if (sessionId && !isValidSessionId(sessionId)) {
     throw new Error("无效的 session ID");
   }
@@ -158,6 +167,8 @@ export async function readPiSessions(sessionId = "") {
     READ_SESSIONS_SCRIPT,
     PI_SESSION_DIR,
     sessionId,
+    "/workspace",
+    artifactId,
   ]);
 
   return JSON.parse(output);
