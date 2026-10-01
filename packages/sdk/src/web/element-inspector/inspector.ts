@@ -72,14 +72,7 @@ export function createElementInspector({
     event.stopPropagation();
     event.stopImmediatePropagation();
     const inspection = inspect(element);
-    if (event.ctrlKey || event.metaKey) {
-      const activeIndex = activeInspections.findIndex((active) => active.element === element);
-      activeInspections = activeIndex >= 0
-        ? activeInspections.filter((_, index) => index !== activeIndex)
-        : [...activeInspections, inspection];
-    } else {
-      activeInspections = [inspection];
-    }
+    activeInspections = [inspection];
     hoveredInspection = activeInspections.some((active) => active.element === element)
       ? null
       : inspection;
@@ -146,6 +139,11 @@ export function createElementInspector({
 
   return {
     setPickingEnabled,
+    selectElement(element) {
+      activeInspections = [inspect(element)];
+      hoveredInspection = null;
+      emitInspectionState();
+    },
     refresh,
     confirmActiveSelections() {
       const selections = activeInspections.map(({ selection }) => selection);

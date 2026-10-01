@@ -48,3 +48,5 @@ SDK server 只要求实现 `Sandbox.bash`，产物目录通过 `cwd` 传入。�
 执行接口、辅助方法与两种 Agent 接入示例见 [SDK 文档](packages/sdk/README.md)。
 
 `npm test` 运行 SDK、宿主版本工作流和 Web 回归检查；真实 Docker 测试通过 `SDK_DOCKER_CONTAINER` 指定容器。已启动宿主接口时，设置 `ARTIFACT_SERVER_TEST_URL` 和 `ARTIFACT_SANDBOX_CONTAINER` 后运行 `npm run test:integration --workspace @artifact-editor/server`，验证文件、版本、构建与预览。集成测试使用独立临时产物，并要求宿主预览槽位空闲。
+
+`npm run test:web:integration` 使用 Chromium 验证首次打开和刷新时预览只加载一次。测试会启动独立的 Web 服务并提供固定接口响应，无需启动业务服务或 Docker；可通过 `ARTIFACT_TEST_BROWSER` 指定浏览器可执行文件。

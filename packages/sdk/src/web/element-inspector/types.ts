@@ -11,8 +11,6 @@ export interface ElementSelection {
     text?: string;
     outerHTML?: string;
   };
-  /** 兼容旧版 source locator。 */
-  sourceId?: string;
   /** React/Vue 等框架定位插件给出的精确源码位置。 */
   source?: {
     file: string;
@@ -34,6 +32,8 @@ export interface ElementInspectionState {
 
 export interface ElementInspector {
   setPickingEnabled(enabled: boolean): void;
+  /** 将一个已知 DOM 元素设为唯一激活选择。 */
+  selectElement(element: Element): void;
   /** 重新读取当前 hover 与激活元素的几何信息。 */
   refresh(): void;
   /** 确认全部激活选择并清空激活态；没有激活选择时返回空数组。 */

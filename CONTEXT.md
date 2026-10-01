@@ -20,6 +20,14 @@ _Avoid_: Artifact、Sandbox、Session
 绑定到一个 Artifact 的 Agent 对话。Session 保存对话上下文，但不拥有独立的产物副本或版本。
 _Avoid_: Branch、Revision、Workspace
 
+**Element Draft**:
+当前消息中针对某个唯一预览元素的待发送修改，包含给 Agent 的评论和已应用的直接调整；再次激活同一元素时继续编辑同一份草稿。
+_Avoid_: Selected Element、Popover、Prompt
+
+**Current Element Draft**:
+当前正在编辑的 Element Draft；任一时刻至多存在一个，可以是新选择产生的草稿，也可以是发送列表中恢复的草稿。
+_Avoid_: Active Selection、Focused Item
+
 **Checkpoint**:
 Artifact 源码的一份不可变快照，拥有 Artifact 内单调递增的版本号，可以独立于 Git 分支结构被查看或作为后续编辑起点。
 _Avoid_: Revision、Branch、Session

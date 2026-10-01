@@ -126,17 +126,6 @@ test("没有稳定 id 时，hint 会携带父级和祖先元素", () => {
   assert.deepEqual(selection.domHint.ancestors, ["main#app", "section.dashboard.dark"]);
 });
 
-test("元素选择结果会携带源码定位插件注入的 source id", () => {
-  const selection = describeElement({
-    tagName: "BUTTON",
-    id: "save",
-    classList: ["primary"],
-    getAttribute: (name) => name === "data-artifact-source" ? "s_abc123" : null,
-  });
-
-  assert.equal(selection.sourceId, "s_abc123");
-});
-
 test("元素选择结果会解析 Code Inspector 的源码位置", () => {
   const selection = describeElement({
     tagName: "BUTTON",
@@ -193,7 +182,7 @@ test("单击只激活元素，确认选择后才产出列表项", () => {
   inspector.destroy();
 });
 
-test("Ctrl 或 Command 单击可以追加和取消激活元素", () => {
+test("一次编辑始终只有一个激活元素", () => {
   const { element, secondElement, frameDocument, iframe } = createInspectorFixture();
   const states = [];
   const inspector = createElementInspector({
@@ -213,19 +202,43 @@ test("Ctrl 或 Command 单击可以追加和取消激活元素", () => {
   click(secondElement, { ctrlKey: true });
   assert.deepEqual(
     states.at(-1).activeInspections.map(({ selection }) => selection.hint),
-    ["button#save.primary", "a#cancel.secondary"],
+    ["a#cancel.secondary"],
   );
 
   click(element, { metaKey: true });
   assert.deepEqual(
     states.at(-1).activeInspections.map(({ selection }) => selection.hint),
-    ["a#cancel.secondary"],
+    ["button#save.primary"],
   );
 
   assert.deepEqual(
     inspector.confirmActiveSelections().map(({ hint }) => hint),
-    ["a#cancel.secondary"],
+    ["button#save.primary"],
   );
+  inspector.destroy();
+});
+
+test("已确认的元素可以从发送列表重新激活", () => {
+  const { element, frameDocument, iframe } = createInspectorFixture();
+  const states = [];
+  const inspector = createElementInspector({
+    iframe,
+    onInspectionStateChange: (state) => states.push(state),
+  });
+
+  inspector.setPickingEnabled(true);
+  frameDocument.emit("click", {
+    target: element,
+    preventDefault() {},
+    stopPropagation() {},
+    stopImmediatePropagation() {},
+  });
+  inspector.confirmActiveSelections();
+  assert.deepEqual(states.at(-1).activeInspections, []);
+
+  inspector.selectElement(element);
+  assert.equal(states.at(-1).activeInspections.length, 1);
+  assert.equal(states.at(-1).activeInspections[0].selection.hint, "button#save.primary");
   inspector.destroy();
 });
 

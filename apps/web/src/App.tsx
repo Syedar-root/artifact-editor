@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
+  FocusEvent as ReactFocusEvent,
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
@@ -18,10 +19,12 @@ import {
   Folder,
   FolderOpen,
   Globe2,
+  History,
   ImageIcon,
   Italic,
   Laptop,
   Menu,
+  MessageSquareText,
   MoreHorizontal,
   Paperclip,
   Plus,
@@ -35,7 +38,19 @@ import {
 import { useArtifactElementTools } from "@artifact-editor/sdk/web/react";
 import type { ElementSelection } from "@artifact-editor/sdk/web/element-inspector";
 import { readJsonResponse } from "./api-response";
+import {
+  editingQueueItem,
+  editingTargetForSelection,
+  mergeEditedElement,
+} from "./element-edit-workflow";
 import type {
+  ElementEditTarget,
+  SelectedElementItem,
+} from "./element-edit-workflow";
+import { calculateElementEditorPosition } from "./element-editor-position";
+import { resizeComposerInput } from "./composer-input";
+import type {
+  ElementChangeSet,
   ElementEditGroup,
   ElementEditProperty,
   ElementEditPropertyId,
@@ -52,6 +67,7 @@ interface ChatMessage {
   text: string;
   time: string;
   details?: string[];
+  attachments?: MessageElementAttachment[];
   error?: boolean;
 }
 
@@ -60,6 +76,7 @@ interface ApiMessage {
   role: MessageRole;
   text: string;
   timestamp: string;
+  attachments?: MessageElementAttachment[];
   error?: boolean;
 }
 
@@ -85,6 +102,32 @@ interface ArtifactSummary {
   locatorMode: "runtime-hint" | "code-inspector";
 }
 
+interface CheckpointSummary {
+  version: number;
+  tag: string;
+  commitSha: string;
+  createdAt: string;
+  message: string;
+}
+
+type CheckpointMode = "latest" | "historical-preview" | "editing-history";
+
+interface CheckpointState {
+  mode: CheckpointMode;
+  activeVersion: number | null;
+  workspaceVersion: number | null;
+  latestVersion: number;
+  nextVersion: number;
+  revision: string;
+}
+
+interface CheckpointPayload {
+  checkpoints: CheckpointSummary[];
+  state: CheckpointState;
+  artifact?: ArtifactSummary;
+  error?: string;
+}
+
 type TechnologyStack = "html" | "react" | "vue";
 
 interface FileTreeNode {
@@ -94,11 +137,29 @@ interface FileTreeNode {
   children?: FileTreeNode[];
 }
 
-interface SelectedElementItem extends ElementSelection {
-  key: number;
+interface MessageElementAttachment {
+  tagName?: string;
+  id?: string;
+  classNames?: string[];
+  hint: string;
+  domHint?: ElementSelection["domHint"];
+  source?: ElementSelection["source"];
+  comment?: string;
+  changes?: ElementChangeSet["changes"];
+}
+
+type ArtifactCreationPhase = "idle" | "workspace" | "dependencies" | "locator" | "preview" | "ready" | "error";
+
+interface ArtifactProgressEvent {
+  type: "progress" | "complete" | "error";
+  phase?: Exclude<ArtifactCreationPhase, "idle" | "ready" | "error">;
+  artifact?: ArtifactSummary;
+  error?: string;
 }
 
 const initialMessages: ChatMessage[] = [];
+
+const DEFAULT_ELEMENT_PROMPT = "请结合这些元素的评论和已应用修改统一调整页面，并保持整体视觉风格一致。";
 
 const DEFAULT_CHAT_WIDTH = 420;
 const MIN_CHAT_WIDTH = 320;
@@ -116,29 +177,41 @@ const TECHNOLOGY_OPTIONS: Array<{
   { value: "vue", label: "Vue", description: "Vite + Code Inspector 精确定位" },
 ];
 
+const ARTIFACT_CREATION_STEPS = [
+  { phase: "workspace", label: "创建工作区", description: "生成目录和初始文件" },
+  { phase: "dependencies", label: "安装项目依赖", description: "准备框架与构建工具" },
+  { phase: "locator", label: "配置元素定位", description: "接入 DOM hint 或 Code Inspector" },
+  { phase: "preview", label: "启动预览服务", description: "生成配置并连接预览" },
+] as const;
+
+function artifactCreationStepState(
+  phase: ArtifactCreationPhase,
+  stepPhase: (typeof ARTIFACT_CREATION_STEPS)[number]["phase"],
+  hasError: boolean,
+): "pending" | "active" | "complete" | "error" {
+  if (phase === "ready") return "complete";
+  const currentIndex = ARTIFACT_CREATION_STEPS.findIndex((step) => step.phase === phase);
+  const stepIndex = ARTIFACT_CREATION_STEPS.findIndex((step) => step.phase === stepPhase);
+  if (currentIndex < 0 || stepIndex > currentIndex) return "pending";
+  if (stepIndex < currentIndex) return "complete";
+  return hasError ? "error" : "active";
+}
+
 function technologyLabel(stack: TechnologyStack): string {
   return TECHNOLOGY_OPTIONS.find((option) => option.value === stack)?.label || stack;
 }
 
-function formatSelectedElementContext(element: SelectedElementItem, index: number): string {
-  const lines = [
-    `[元素 ${index + 1}]`,
-    `DOM 路径：${element.domHint.path}`,
-  ];
-  if (element.domHint.ancestors.length > 0) {
-    lines.push(`祖先链路：${element.domHint.ancestors.join(" > ")}`);
-  }
-  if (Object.keys(element.domHint.attributes).length > 0) {
-    lines.push(`关键属性：${JSON.stringify(element.domHint.attributes)}`);
-  }
-  if (element.domHint.text) lines.push(`文本：${element.domHint.text}`);
-  if (element.domHint.outerHTML) lines.push(`HTML：${element.domHint.outerHTML}`);
-  if (element.source) {
-    lines.push(`源码位置：${element.source.file}:${element.source.line}:${element.source.column}`);
-  } else {
-    lines.push("源码位置：未注入，请根据上述运行时 DOM hint 在当前项目中定位");
-  }
-  return lines.join("\n");
+function toMessageElementAttachment(element: SelectedElementItem): MessageElementAttachment {
+  return {
+    tagName: element.tagName,
+    id: element.id,
+    classNames: element.classNames,
+    hint: element.hint,
+    domHint: element.domHint,
+    source: element.source,
+    comment: element.comment,
+    changes: element.changes,
+  };
 }
 
 function editorProperty(
@@ -164,11 +237,12 @@ function colorInputValue(value: ElementEditPropertyValue | undefined): string {
 
 interface ElementEditorPopoverProps {
   state: ElementEditorEditingState;
+  initialComment?: string;
   position: CSSProperties;
   placement: "above" | "below";
   onUpdate(property: ElementEditPropertyId, value: ElementEditPropertyValue): void;
   onCancel(): void;
-  onCommit(): void;
+  onCommit(comment: string): void;
 }
 
 const ELEMENT_PROPERTY_LABELS: Record<ElementEditPropertyKey, string> = {
@@ -301,12 +375,15 @@ function GenericElementEditorField({
 
 function ElementEditorPopover({
   state,
+  initialComment = "",
   position,
   placement,
   onUpdate,
   onCancel,
   onCommit,
 }: ElementEditorPopoverProps) {
+  const [activeTab, setActiveTab] = useState<"style" | "comment">("style");
+  const [comment, setComment] = useState(initialComment);
   const text = editorProperty(state, "content.text");
   const fontSize = editorProperty(state, "typography.fontSize");
   const fontWeight = editorProperty(state, "typography.fontWeight");
@@ -340,6 +417,17 @@ function ElementEditorPopover({
       return groups;
     }, new Map<ElementEditGroup, ElementEditProperty[]>());
 
+  useEffect(() => {
+    setActiveTab("style");
+    setComment(initialComment);
+  }, [
+    initialComment,
+    state.target.hint,
+    state.target.source?.file,
+    state.target.source?.line,
+    state.target.source?.column,
+  ]);
+
   return (
     <section
       className={`element-editor-popover is-${placement}`}
@@ -356,7 +444,29 @@ function ElementEditorPopover({
         </button>
       </header>
 
-      <div className="element-editor-fields">
+      <div className="element-editor-tabs" role="tablist" aria-label="元素操作方式">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "style"}
+          className={activeTab === "style" ? "is-active" : ""}
+          onClick={() => setActiveTab("style")}
+        >
+          <Type size={13} />样式
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "comment"}
+          className={activeTab === "comment" ? "is-active" : ""}
+          onClick={() => setActiveTab("comment")}
+        >
+          <MessageSquareText size={13} />AI Comment
+        </button>
+      </div>
+
+      {activeTab === "style" ? (
+        <div className="element-editor-fields">
         {text && (
           <label className="element-editor-field is-wide">
             <span>文本</span>
@@ -515,11 +625,33 @@ function ElementEditorPopover({
         {state.properties.length === 0 && (
           <p className="element-editor-empty">这个元素暂时没有可直接编辑的属性。</p>
         )}
-      </div>
+        </div>
+      ) : (
+        <div className="element-editor-comment">
+          <div className="element-editor-comment-intro">
+            <span><Sparkles size={14} /></span>
+            <div>
+              <strong>告诉 AI 你希望怎么调整</strong>
+              <p>这条评论会和元素定位信息一起加入发送列表。</p>
+            </div>
+          </div>
+          <textarea
+            autoFocus
+            value={comment}
+            onChange={(event) => setComment(event.target.value)}
+            placeholder="例如：这个按钮层级不够突出，请让它更像主要操作，同时保持当前品牌色。"
+            rows={5}
+          />
+        </div>
+      )}
 
       <footer className="element-editor-actions">
         <button type="button" onClick={onCancel}>取消</button>
-        <button type="button" className="is-primary" disabled={!state.dirty} onClick={onCommit}>
+        <button
+          type="button"
+          className="is-primary"
+          onClick={() => onCommit(comment.trim())}
+        >
           <Check size={14} />应用
         </button>
       </footer>
@@ -540,6 +672,44 @@ function formatSessionTime(timestamp: string | number | Date) {
   const today = new Date();
   if (date.toDateString() === today.toDateString()) return formatMessageTime(timestamp);
   return date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+}
+
+async function readArtifactProgress(
+  response: Response,
+  onProgress: (phase: Exclude<ArtifactCreationPhase, "idle" | "ready" | "error">) => void,
+): Promise<ArtifactSummary> {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/x-ndjson")) {
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "产物操作失败");
+    return payload.artifact;
+  }
+  if (!response.body) throw new Error("无法读取产物创建进度");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let artifact: ArtifactSummary | null = null;
+
+  function consume(line: string) {
+    if (!line.trim()) return;
+    const event = JSON.parse(line) as ArtifactProgressEvent;
+    if (event.type === "progress" && event.phase) onProgress(event.phase);
+    if (event.type === "complete" && event.artifact) artifact = event.artifact;
+    if (event.type === "error") throw new Error(event.error || "产物操作失败");
+  }
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) consume(line);
+    if (done) break;
+  }
+  consume(buffer);
+  if (!artifact) throw new Error("产物操作结束，但没有返回产物信息");
+  return artifact;
 }
 
 function treeContainsFile(nodes: FileTreeNode[], filePath: string): boolean {
@@ -568,9 +738,16 @@ function App() {
   const [artifactsError, setArtifactsError] = useState("");
   const [artifactMenuOpen, setArtifactMenuOpen] = useState(false);
   const [creatingArtifact, setCreatingArtifact] = useState(false);
+  const [artifactCreationPhase, setArtifactCreationPhase] = useState<ArtifactCreationPhase>("idle");
+  const [artifactCreationError, setArtifactCreationError] = useState("");
   const [artifactDialogOpen, setArtifactDialogOpen] = useState(false);
   const [artifactDraftName, setArtifactDraftName] = useState("");
   const [artifactDraftStack, setArtifactDraftStack] = useState<TechnologyStack>("html");
+  const [checkpoints, setCheckpoints] = useState<CheckpointSummary[]>([]);
+  const [checkpointState, setCheckpointState] = useState<CheckpointState | null>(null);
+  const [checkpointMenuOpen, setCheckpointMenuOpen] = useState(false);
+  const [checkpointLoading, setCheckpointLoading] = useState(false);
+  const [checkpointError, setCheckpointError] = useState("");
   const [messages, setMessages] = useState(initialMessages);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -585,6 +762,9 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [isElementPicking, setIsElementPicking] = useState(false);
   const [selectedElements, setSelectedElements] = useState<SelectedElementItem[]>([]);
+  const [composerElements, setComposerElements] = useState<SelectedElementItem[]>([]);
+  const [elementEditTarget, setElementEditTarget] = useState<ElementEditTarget | null>(null);
+  const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(null);
   const [previewKey, setPreviewKey] = useState(0);
   const [codeTree, setCodeTree] = useState<FileTreeNode[]>([]);
   const [selectedFile, setSelectedFile] = useState("");
@@ -604,6 +784,7 @@ function App() {
   const [isResizing, setIsResizing] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
+  const checkpointMenuRef = useRef<HTMLDivElement>(null);
   const sendMessageRef = useRef<((messageOverride?: string) => Promise<string | null>) | null>(null);
   const workspaceRef = useRef<HTMLElement>(null);
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
@@ -618,7 +799,11 @@ function App() {
   });
   const { activeElements, editorState: elementEditorState } = elementTools;
 
-  const canSend = input.trim().length > 0 && !isThinking && !!activeArtifactId;
+  const isHistoricalPreview = checkpointState?.mode === "historical-preview";
+  const canSend = (input.trim().length > 0 || composerElements.length > 0)
+    && !isThinking
+    && !!activeArtifactId
+    && !isHistoricalPreview;
 
   const activeArtifact = useMemo(
     () => artifacts.find((artifact) => artifact.id === activeArtifactId) || null,
@@ -670,19 +855,125 @@ function App() {
     window.localStorage.setItem("artifact-chat-width", String(chatWidth));
   }, [chatWidth]);
 
-  function addActiveElementsToSelectionList() {
-    const selections = elementTools.confirmSelections();
-    if (selections.length === 0) return;
-    const items = selections.map((selection) => {
-      selectedElementKeyRef.current += 1;
-      return { ...selection, key: selectedElementKeyRef.current };
+  useLayoutEffect(() => {
+    if (composerInputRef.current) resizeComposerInput(composerInputRef.current);
+  }, [input]);
+
+  useEffect(() => {
+    if (!checkpointMenuOpen) return undefined;
+    function closeCheckpointMenuOnOutsidePointer(event: PointerEvent) {
+      if (!checkpointMenuRef.current?.contains(event.target as Node)) {
+        setCheckpointMenuOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", closeCheckpointMenuOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeCheckpointMenuOnOutsidePointer);
+  }, [checkpointMenuOpen]);
+
+  useEffect(() => {
+    if (activeElements.length !== 1) {
+      setElementEditTarget(null);
+      return;
+    }
+    const next = editingTargetForSelection(activeElements[0], selectedElements);
+    setElementEditTarget((current) => {
+      if (current?.kind === "queue-item" && next.kind === "queue-item" && current.key === next.key) {
+        return current;
+      }
+      if (current?.kind === "preview-selection" && next.kind === "preview-selection") {
+        return current;
+      }
+      return next;
     });
-    setSelectedElements((current) => [...current, ...items]);
+  }, [activeElements, selectedElements]);
+
+  function createSelectedElementItem(
+    selection: ElementSelection,
+    element?: Element,
+    comment?: string,
+    changes?: ElementChangeSet["changes"],
+  ): SelectedElementItem {
+    selectedElementKeyRef.current += 1;
+    return {
+      ...selection,
+      key: selectedElementKeyRef.current,
+      ...(element ? { element } : {}),
+      ...(comment ? { comment } : {}),
+      ...(changes && changes.length > 0 ? { changes } : {}),
+    };
   }
 
-  function closeElementEditor(commit: boolean) {
-    if (commit) elementTools.commitEdits();
-    else elementTools.cancelEdits();
+  function applySelectionListToComposer() {
+    if (selectedElements.length === 0) return;
+    const shouldUseDefaultPrompt = input.trim().length === 0;
+    if (elementEditTarget) elementTools.cancelEdits();
+    setComposerElements((current) => [...current, ...selectedElements]);
+    setSelectedElements([]);
+    setElementEditTarget(null);
+    setIsElementPicking(false);
+    if (shouldUseDefaultPrompt) setInput(DEFAULT_ELEMENT_PROMPT);
+    window.requestAnimationFrame(() => {
+      const textarea = composerInputRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      if (shouldUseDefaultPrompt) textarea.select();
+    });
+  }
+
+  function closeCheckpointMenuOnBlur(event: ReactFocusEvent<HTMLDivElement>) {
+    const nextTarget = event.relatedTarget;
+    if (!nextTarget || !event.currentTarget.contains(nextTarget as Node)) {
+      setCheckpointMenuOpen(false);
+    }
+  }
+
+  function closeElementEditor(commit: boolean, comment = "") {
+    if (!commit) {
+      elementTools.cancelEdits();
+      setElementEditTarget(null);
+      return;
+    }
+
+    const inspection = activeElements.length === 1 ? activeElements[0] : null;
+    const target = elementEditTarget;
+    const changeSet = elementTools.commitEdits();
+    if (!inspection || !target) return;
+    const item = createSelectedElementItem(
+      changeSet?.target ?? inspection.selection,
+      inspection.element,
+      comment,
+      changeSet?.changes,
+    );
+    setSelectedElements((current) => mergeEditedElement(current, target, item));
+    setElementEditTarget(null);
+  }
+
+  function resolveSelectedElement(item: SelectedElementItem): Element | null {
+    if (item.element?.isConnected) return item.element;
+    const document = previewIframeRef.current?.contentDocument;
+    if (!document) return null;
+    if (item.source) {
+      const prefix = `${item.source.file}:${item.source.line}:${item.source.column}:`;
+      const sourceMatch = Array.from(document.querySelectorAll("[data-insp-path]"))
+        .find((element) => element.getAttribute("data-insp-path")?.startsWith(prefix));
+      if (sourceMatch) return sourceMatch;
+    }
+    if (item.id) {
+      const idMatch = document.getElementById(item.id);
+      if (idMatch) return idMatch;
+    }
+    return Array.from(document.getElementsByTagName(item.tagName))
+      .find((element) => item.classNames.every((className) => element.classList.contains(className)))
+      ?? null;
+  }
+
+  function editSelectedElement(item: SelectedElementItem) {
+    const element = resolveSelectedElement(item);
+    if (!element) return;
+    element.scrollIntoView({ block: "center", inline: "center" });
+    setIsElementPicking(true);
+    setElementEditTarget(editingQueueItem(item));
+    elementTools.selectElement(element);
   }
 
   function updateElementEditor(
@@ -699,21 +990,20 @@ function App() {
     if (elementEditorState.status !== "editing" || activeElements.length !== 1) return null;
     const iframe = previewIframeRef.current;
     if (!iframe) return null;
-    const rect = activeElements[0].boxModel.rect;
-    const halfPopoverWidth = 174;
-    const left = Math.min(
-      Math.max(halfPopoverWidth + 8, iframe.offsetLeft + rect.left + rect.width / 2),
-      Math.max(halfPopoverWidth + 8, iframe.offsetLeft + iframe.clientWidth - halfPopoverWidth - 8),
-    );
-    const estimatedHeight = Math.min(420, 120 + elementEditorState.properties.length * 34);
-    const placement = rect.top >= estimatedHeight + 18 ? "above" : "below";
+    const calculated = calculateElementEditorPosition({
+      iframeLeft: iframe.offsetLeft,
+      iframeTop: iframe.offsetTop,
+      iframeWidth: iframe.clientWidth,
+      iframeHeight: iframe.clientHeight,
+      propertyCount: elementEditorState.properties.length,
+      target: activeElements[0].boxModel.rect,
+    });
     return {
-      placement,
+      placement: calculated.placement,
       position: {
-        left,
-        top: iframe.offsetTop + (placement === "above"
-          ? rect.top - 10
-          : rect.top + rect.height + 10),
+        left: calculated.left,
+        top: calculated.top,
+        maxHeight: calculated.maxHeight,
       },
     };
   }
@@ -809,8 +1099,12 @@ function App() {
     artifactId = activeArtifactId,
   ) {
     if (!sessionId || !artifactId || isThinking) return;
+    elementTools.cancelEdits();
+    setIsElementPicking(false);
     setActiveSessionId(sessionId);
     setSelectedElements([]);
+    setComposerElements([]);
+    setElementEditTarget(null);
     setSessionLoading(true);
     setSessionsError("");
     setSidebarOpen(false);
@@ -846,15 +1140,28 @@ function App() {
     }
   }
 
-  async function activateArtifact(artifactId: string, signal?: AbortSignal) {
+  async function activateArtifact(
+    artifactId: string,
+    signal?: AbortSignal,
+    onProgress?: (phase: Exclude<ArtifactCreationPhase, "idle" | "ready" | "error">) => void,
+  ) {
     if (!artifactId || isThinking) return;
+    elementTools.cancelEdits();
+    setIsElementPicking(false);
     setActiveArtifactId(artifactId);
     window.localStorage.setItem("active-artifact-id", artifactId);
     setArtifactMenuOpen(false);
+    setCheckpointMenuOpen(false);
+    setCheckpoints([]);
+    setCheckpointState(null);
+    setCheckpointError("");
     setActiveSessionId(null);
+    setPreviewArtifactId(null);
     setMessages([]);
     setSessions([]);
     setSelectedElements([]);
+    setComposerElements([]);
+    setElementEditTarget(null);
     setSelectedFile("");
     setFileContent("");
     setCodeTree([]);
@@ -865,23 +1172,101 @@ function App() {
     try {
       const response = await fetch(`/api/artifacts/${encodeURIComponent(artifactId)}/start`, {
         method: "POST",
+        headers: onProgress ? { accept: "application/x-ndjson" } : undefined,
         signal,
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "无法启动产物");
-      if (payload.artifact) {
+      const startedArtifact = onProgress
+        ? await readArtifactProgress(response, onProgress)
+        : await response.json().then((payload) => {
+          if (!response.ok) throw new Error(payload.error || "无法启动产物");
+          return payload.artifact as ArtifactSummary;
+        });
+      if (startedArtifact) {
         setArtifacts((current) => current.map((artifact) =>
-          artifact.id === artifactId ? payload.artifact : artifact
+          artifact.id === artifactId ? startedArtifact : artifact
         ));
       }
+      const checkpointResponse = await fetch(
+        `/api/artifacts/${encodeURIComponent(artifactId)}/checkpoints`,
+        { signal },
+      );
+      const checkpointPayload = await readJsonResponse<CheckpointPayload>(checkpointResponse);
+      if (!checkpointResponse.ok) {
+        throw new Error(checkpointPayload.error || "无法读取版本记录");
+      }
+      setCheckpoints(checkpointPayload.checkpoints);
+      setCheckpointState(checkpointPayload.state);
       setPreviewKey((current) => current + 1);
       const nextSessions = await fetchSessionList(artifactId, signal);
       if (nextSessions[0]) await openSession(nextSessions[0].id, signal, artifactId);
+      if (!signal?.aborted) setPreviewArtifactId(artifactId);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setArtifactsError(error instanceof Error ? error.message : "无法打开产物");
+      if (onProgress) throw error;
     } finally {
       if (!signal?.aborted) setSessionsLoading(false);
+    }
+  }
+
+  function applyCheckpointPayload(payload: CheckpointPayload) {
+    setCheckpoints(payload.checkpoints);
+    setCheckpointState(payload.state);
+    if (payload.artifact) {
+      const updatedArtifact = payload.artifact;
+      setArtifacts((current) => current.map((artifact) =>
+        artifact.id === updatedArtifact.id ? updatedArtifact : artifact
+      ));
+    }
+    setPreviewArtifactId(activeArtifactId);
+    setPreviewKey((current) => current + 1);
+    setCodeRefreshKey((current) => current + 1);
+    setCheckpointMenuOpen(false);
+  }
+
+  async function changeCheckpoint(version: number, action: "preview" | "edit") {
+    if (!activeArtifactId || isThinking || checkpointLoading) return;
+    elementTools.cancelEdits();
+    setIsElementPicking(false);
+    setElementEditTarget(null);
+    setCheckpointMenuOpen(false);
+    setCheckpointLoading(true);
+    setCheckpointError("");
+    try {
+      const response = await fetch(
+        `/api/artifacts/${encodeURIComponent(activeArtifactId)}/checkpoints/${version}/${action}`,
+        { method: "POST" },
+      );
+      const payload = await readJsonResponse<CheckpointPayload>(response);
+      if (!response.ok) throw new Error(payload.error || "无法切换版本");
+      applyCheckpointPayload(payload);
+    } catch (error) {
+      setCheckpointError(error instanceof Error ? error.message : "无法切换版本");
+    } finally {
+      setCheckpointLoading(false);
+    }
+  }
+
+  async function resumeLatestCheckpoint() {
+    if (!activeArtifactId || isThinking || checkpointLoading) return;
+    elementTools.cancelEdits();
+    setIsElementPicking(false);
+    setElementEditTarget(null);
+    setCheckpointMenuOpen(false);
+    setCheckpointLoading(true);
+    setCheckpointError("");
+    try {
+      const response = await fetch(
+        `/api/artifacts/${encodeURIComponent(activeArtifactId)}/checkpoints/resume`,
+        { method: "POST" },
+      );
+      const payload = await readJsonResponse<CheckpointPayload>(response);
+      if (!response.ok) throw new Error(payload.error || "无法返回当前版本");
+      applyCheckpointPayload(payload);
+    } catch (error) {
+      setCheckpointError(error instanceof Error ? error.message : "无法返回当前版本");
+    } finally {
+      setCheckpointLoading(false);
     }
   }
 
@@ -890,6 +1275,8 @@ function App() {
     setArtifactMenuOpen(false);
     setArtifactDraftName("");
     setArtifactDraftStack("html");
+    setArtifactCreationPhase("idle");
+    setArtifactCreationError("");
     setArtifactDialogOpen(true);
   }
 
@@ -899,22 +1286,29 @@ function App() {
     const name = artifactDraftName.trim();
     if (!name) return;
     setCreatingArtifact(true);
+    setArtifactCreationPhase("workspace");
+    setArtifactCreationError("");
     setArtifactMenuOpen(false);
     setArtifactsError("");
     try {
       const response = await fetch("/api/artifacts", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          accept: "application/x-ndjson",
+        },
         body: JSON.stringify({ name, technologyStack: artifactDraftStack }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "无法创建产物");
-      const artifact: ArtifactSummary = payload.artifact;
+      const artifact = await readArtifactProgress(response, setArtifactCreationPhase);
       setArtifacts((current) => [...current, artifact]);
+      await activateArtifact(artifact.id, undefined, setArtifactCreationPhase);
+      setArtifactCreationPhase("ready");
+      await new Promise((resolve) => window.setTimeout(resolve, 550));
       setArtifactDialogOpen(false);
-      await activateArtifact(artifact.id);
     } catch (error) {
-      setArtifactsError(error instanceof Error ? error.message : "无法创建产物");
+      const message = error instanceof Error ? error.message : "无法创建产物";
+      setArtifactCreationError(message);
+      setArtifactsError(message);
     } finally {
       setCreatingArtifact(false);
       setArtifactsLoading(false);
@@ -923,10 +1317,14 @@ function App() {
 
   function startNewSession() {
     if (isThinking) return;
+    elementTools.cancelEdits();
+    setIsElementPicking(false);
     setActiveSessionId(null);
     setMessages([]);
     setInput("");
     setSelectedElements([]);
+    setComposerElements([]);
+    setElementEditTarget(null);
     setSessionsError("");
     setSidebarOpen(false);
   }
@@ -1034,12 +1432,19 @@ function App() {
   }
 
   async function sendMessage(messageOverride?: string): Promise<string | null> {
-    const text = typeof messageOverride === "string" ? messageOverride.trim() : input.trim();
-    if (!text || isThinking || !activeArtifactId) return null;
+    const messageElements = [...composerElements];
+    const requestedText = typeof messageOverride === "string" ? messageOverride.trim() : input.trim();
+    const text = requestedText || (messageElements.length > 0
+      ? DEFAULT_ELEMENT_PROMPT
+      : "");
+    if (!text || isThinking || !activeArtifactId || isHistoricalPreview) return null;
     const targetSessionId = activeSessionId;
-    const selectedElementContext = selectedElements.map(formatSelectedElementContext);
-    const agentMessage = selectedElementContext.length > 0
-      ? `${text}\n\n以下是用户在预览中选择的运行时 DOM hint：\n\n${selectedElementContext.join("\n\n")}`
+    const messageAttachments = messageElements.map(toMessageElementAttachment);
+    const agentMessage = messageAttachments.length > 0
+      ? `${text}\n\n<artifact-editor-context>\n${JSON.stringify({
+          instruction: "根据这些预览元素的 DOM 上下文、用户评论和预览修改完成请求。",
+          elements: messageAttachments,
+        }, null, 2)}\n</artifact-editor-context>`
       : text;
     const now = new Date().toLocaleTimeString("zh-CN", {
       hour: "2-digit",
@@ -1049,9 +1454,16 @@ function App() {
 
     setMessages((current) => [
       ...current,
-      { id: Date.now(), role: "user", text, time: now },
+      {
+        id: Date.now(),
+        role: "user",
+        text,
+        time: now,
+        attachments: messageAttachments,
+      },
     ]);
     setInput("");
+    setComposerElements([]);
     setIsThinking(true);
     try {
       const response = await fetch("/api/chat", {
@@ -1061,6 +1473,7 @@ function App() {
           message: agentMessage,
           sessionId: targetSessionId,
           artifactId: activeArtifactId,
+          checkpointRevision: checkpointState?.revision,
         }),
       });
       const payload = await readJsonResponse<{
@@ -1069,6 +1482,8 @@ function App() {
         error?: string;
         artifact?: ArtifactSummary;
         runtimeWarning?: string;
+        checkpoints?: CheckpointSummary[];
+        checkpointState?: CheckpointState;
       }>(response);
       if (!response.ok) throw new Error(payload.error || "pi Agent 调用失败");
 
@@ -1080,6 +1495,8 @@ function App() {
         ));
       }
       if (payload.runtimeWarning) setArtifactsError(payload.runtimeWarning);
+      if (payload.checkpoints) setCheckpoints(payload.checkpoints);
+      if (payload.checkpointState) setCheckpointState(payload.checkpointState);
 
       setMessages((current) => [
         ...current,
@@ -1101,6 +1518,7 @@ function App() {
       return payload.reply;
     } catch (error) {
       setInput((current) => current.trim() ? current : text);
+      setComposerElements((current) => current.length > 0 ? current : messageElements);
       setMessages((current) => [
         ...current,
         {
@@ -1133,7 +1551,10 @@ function App() {
   }
 
   function refreshPreview() {
+    elementTools.cancelEdits();
+    setIsElementPicking(false);
     setRefreshing(true);
+    setElementEditTarget(null);
     setPreviewKey((current) => current + 1);
     window.setTimeout(() => setRefreshing(false), 650);
   }
@@ -1343,6 +1764,35 @@ function App() {
                   <time>{message.time}</time>
                 </div>
                 <p>{message.text}</p>
+                {message.attachments && message.attachments.length > 0 && (
+                  <section className="message-element-attachments" aria-label="消息附带的预览元素">
+                    <div className="message-element-attachments-heading">
+                      <ScanSearch size={13} />
+                      <span>附带 {message.attachments.length} 个预览元素</span>
+                    </div>
+                    <div className="message-element-attachments-list">
+                      {message.attachments.map((attachment, index) => (
+                        <article className="message-element-attachment" key={`${attachment.hint}-${index}`}>
+                          <span className="message-element-attachment-icon" aria-hidden="true">
+                            {attachment.comment ? <MessageSquareText size={12} /> : <Code2 size={12} />}
+                          </span>
+                          <span className="message-element-attachment-body">
+                            <code title={attachment.hint}>{attachment.hint}</code>
+                            {attachment.comment && <small>{attachment.comment}</small>}
+                            {!attachment.comment && attachment.changes && attachment.changes.length > 0 && (
+                              <small>已应用 {attachment.changes.length} 项预览修改</small>
+                            )}
+                            {attachment.source && (
+                              <small className="is-source">
+                                {attachment.source.file}:{attachment.source.line}
+                              </small>
+                            )}
+                          </span>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                )}
                 {message.details && (
                   <div className="agent-steps">
                     {message.details.map((detail) => (
@@ -1366,64 +1816,37 @@ function App() {
           </div>
 
           <div className="composer-wrap">
-            {activeElements.length > 0 && (
-              <section className="active-element-panel" aria-label="当前激活元素">
-                <span className="selected-element-icon" aria-hidden="true">
-                  <ScanSearch size={13} />
-                </span>
-                {activeElements.length === 1 ? (
-                  <code title={activeElements[0].selection.hint}>
-                    {activeElements[0].selection.hint}
-                  </code>
-                ) : (
-                  <span className="active-element-count">
-                    已激活 {activeElements.length} 个元素
-                  </span>
-                )}
-                <button type="button" onClick={addActiveElementsToSelectionList}>
-                  {activeElements.length === 1
-                    ? "添加到列表"
-                    : `添加 ${activeElements.length} 个到列表`}
-                </button>
-              </section>
-            )}
-            {selectedElements.length > 0 && (
-              <section className="selected-elements-panel" aria-label="已选元素">
+            {composerElements.length > 0 && (
+              <section className="selected-elements-panel" aria-label="本次消息附带的元素">
                 <div className="selected-elements-heading">
                   <span>
-                    <ScanSearch size={14} />
-                    已选元素
-                    <b>{selectedElements.length}</b>
+                    <ScanSearch size={13} />已附加到本次消息
+                    <b>{composerElements.length}</b>
                   </span>
-                  <button type="button" onClick={() => setSelectedElements([])}>
-                    清空
-                  </button>
+                  <button type="button" onClick={() => setComposerElements([])}>清空</button>
                 </div>
-                <div className="selected-elements-list" role="list">
-                  {selectedElements.map((element) => (
-                    <div className="selected-element-item" role="listitem" key={element.key}>
+                <div className="selected-elements-list">
+                  {composerElements.map((element) => (
+                    <div className="selected-element-item" key={element.key}>
                       <span className="selected-element-icon" aria-hidden="true">
-                        <Code2 size={13} />
+                        {element.comment ? <MessageSquareText size={12} /> : <Code2 size={12} />}
                       </span>
                       <code title={element.hint}>
                         {element.hint}
-                        {element.source && (
-                          <small>
-                            {element.source.file}:{element.source.line}
-                          </small>
+                        {element.comment && <small>{element.comment}</small>}
+                        {!element.comment && element.changes && (
+                          <small>已应用 {element.changes.length} 项样式修改</small>
                         )}
                       </code>
                       <button
                         type="button"
-                        aria-label={`移除 ${element.hint}`}
+                        aria-label={`从本次消息移除 ${element.hint}`}
                         title="移除"
-                        onClick={() => {
-                          setSelectedElements((current) =>
-                            current.filter((item) => item.key !== element.key),
-                          );
-                        }}
+                        onClick={() => setComposerElements((current) =>
+                          current.filter((item) => item.key !== element.key)
+                        )}
                       >
-                        <X size={13} />
+                        <X size={12} />
                       </button>
                     </div>
                   ))}
@@ -1434,28 +1857,20 @@ function App() {
               <textarea
                 ref={composerInputRef}
                 value={input}
-                onChange={(event) => setInput(event.target.value)}
+                onChange={(event) => {
+                  setInput(event.target.value);
+                  resizeComposerInput(event.currentTarget);
+                }}
                 onKeyDown={handleKeyDown}
-                placeholder="描述你想修改的内容…"
-                rows={2}
+                placeholder={isHistoricalPreview ? "历史版本为只读，请先基于此版本编辑" : "描述你想修改的内容…"}
+                rows={1}
                 aria-label="给 Agent 发消息"
+                disabled={isHistoricalPreview}
               />
               <div className="composer-actions">
                 <div>
                   <button className="composer-icon" aria-label="添加附件">
                     <Paperclip size={17} />
-                  </button>
-                  <button
-                    className={`composer-icon ${isElementPicking ? "is-active" : ""}`}
-                    aria-label={isElementPicking ? "取消选择元素" : "选择预览元素"}
-                    aria-pressed={isElementPicking}
-                    title={isElementPicking ? "取消选择元素" : "选择预览元素"}
-                    onClick={() => {
-                      if (view !== "preview") setView("preview");
-                      setIsElementPicking((current) => !current);
-                    }}
-                  >
-                    <ScanSearch size={17} />
                   </button>
                   <button className="model-button">
                     <WandSparkles size={15} /> pi Agent
@@ -1473,13 +1888,7 @@ function App() {
               </div>
             </div>
             <p className="composer-hint">
-              {activeElements.length > 1
-                ? "多选模式 · Ctrl / Command 单击可追加或取消"
-                : activeElements.length === 1
-                ? "元素已激活 · Ctrl / Command 单击可追加多选"
-                : isElementPicking
-                ? "点击激活元素 · Ctrl / Command 单击多选 · Esc 完成"
-                : "Enter 发送 · Shift + Enter 换行"}
+              {isHistoricalPreview ? "当前正在只读浏览历史版本" : "Enter 发送 · Shift + Enter 换行"}
             </p>
           </div>
         </section>
@@ -1517,9 +1926,11 @@ function App() {
               </button>
               <button
                 className={view === "code" ? "is-active" : ""}
-                onClick={() => {
-                  setIsElementPicking(false);
-                  setView("code");
+                  onClick={() => {
+                    elementTools.cancelEdits();
+                    setIsElementPicking(false);
+                    setElementEditTarget(null);
+                    setView("code");
                 }}
                 role="tab"
                 aria-selected={view === "code"}
@@ -1529,6 +1940,75 @@ function App() {
             </div>
 
             <div className="preview-tools">
+              <div
+                ref={checkpointMenuRef}
+                className="checkpoint-switcher"
+                onBlur={closeCheckpointMenuOnBlur}
+              >
+                <button
+                  type="button"
+                  className="checkpoint-button"
+                  disabled={!checkpointState || checkpointLoading || isThinking}
+                  aria-busy={checkpointLoading}
+                  aria-expanded={checkpointMenuOpen}
+                  onClick={() => setCheckpointMenuOpen((current) => !current)}
+                >
+                  {checkpointLoading
+                    ? <RefreshCw className="checkpoint-spinner" size={15} />
+                    : <History size={15} />}
+                  V{checkpointState?.activeVersion ?? checkpointState?.workspaceVersion ?? "—"}
+                  <ChevronDown size={13} />
+                </button>
+                {checkpointMenuOpen && (
+                  <div className="checkpoint-menu" role="menu" aria-label="Checkpoint 版本">
+                    <div className="checkpoint-menu-heading">
+                      <strong>版本记录</strong>
+                      <span>当前版本 V{checkpointState?.workspaceVersion ?? "—"}</span>
+                    </div>
+                    {checkpoints.map((checkpoint) => {
+                      const isActive = checkpoint.version === checkpointState?.activeVersion;
+                      const isWorkspace = checkpoint.version === checkpointState?.workspaceVersion;
+                      return (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={isActive ? "is-active" : ""}
+                          key={checkpoint.tag}
+                          disabled={isActive || checkpointLoading}
+                          onClick={() => isWorkspace
+                            ? resumeLatestCheckpoint()
+                            : changeCheckpoint(checkpoint.version, "preview")}
+                        >
+                          <span className="checkpoint-version">V{checkpoint.version}</span>
+                          <span className="checkpoint-description">
+                            <b>{checkpoint.message}</b>
+                            <small>{new Date(checkpoint.createdAt).toLocaleString("zh-CN")}</small>
+                          </span>
+                          {isWorkspace && <em>当前</em>}
+                          {isActive && !isWorkspace && <em>正在查看</em>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                className={`edit-mode-button ${isElementPicking ? "is-active" : ""}`}
+                aria-label={isElementPicking ? "退出元素编辑模式" : "进入元素编辑模式"}
+                aria-pressed={isElementPicking}
+                disabled={isHistoricalPreview}
+                onClick={() => {
+                  if (view !== "preview") setView("preview");
+                  if (isElementPicking) elementTools.cancelEdits();
+                  setElementEditTarget(null);
+                  setIsElementPicking((current) => !current);
+                }}
+              >
+                <ScanSearch size={15} />
+                {isElementPicking ? "退出编辑" : "编辑页面"}
+              </button>
+              <span className="toolbar-rule" />
               <span className="desktop-label"><Laptop size={15} /> 桌面</span>
               <span className="toolbar-rule" />
               <button className="icon-button" onClick={refreshPreview} aria-label="刷新预览">
@@ -1549,6 +2029,8 @@ function App() {
             </div>
           </div>
 
+          {checkpointError && <div className="checkpoint-error" role="alert">{checkpointError}</div>}
+
           <div className="canvas-area">
             {view === "preview" ? (
               <div className="browser-frame">
@@ -1560,23 +2042,134 @@ function App() {
                   </div>
                   <MoreHorizontal size={16} />
                 </div>
+                {checkpointState?.mode === "historical-preview" && (
+                  <div className="checkpoint-notice is-history">
+                    <span>
+                      正在只读查看 <b>V{checkpointState.activeVersion}</b>
+                    </span>
+                    <div>
+                      <button
+                        type="button"
+                        disabled={checkpointLoading}
+                        onClick={() => changeCheckpoint(checkpointState.activeVersion || 0, "edit")}
+                      >
+                        基于此版本编辑
+                      </button>
+                      <button type="button" disabled={checkpointLoading} onClick={resumeLatestCheckpoint}>
+                        返回 V{checkpointState.workspaceVersion}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {checkpointState?.mode === "editing-history" && (
+                  <div className="checkpoint-notice is-editing">
+                    <span>
+                      正在基于 <b>V{checkpointState.activeVersion}</b> 编辑，保存后将成为 <b>V{checkpointState.nextVersion}</b>
+                    </span>
+                    <button type="button" disabled={checkpointLoading} onClick={resumeLatestCheckpoint}>
+                      放弃并返回 V{checkpointState.workspaceVersion}
+                    </button>
+                  </div>
+                )}
                 <iframe
                   key={previewKey}
                   ref={previewIframeRef}
                   className="sandbox-preview"
-                  src={activeArtifact?.previewUrl || "about:blank"}
+                  src={activeArtifact && previewArtifactId === activeArtifact.id
+                    ? activeArtifact.previewUrl
+                    : "about:blank"}
                   title={activeArtifact ? `${activeArtifact.name} 预览` : "产物预览"}
                 />
-                {elementEditorState.status === "editing" && (() => {
+                {selectedElements.length > 0 && (
+                  <aside className="element-selection-tray" aria-label="元素发送列表">
+                    <section className="element-selection-queue">
+                        <div className="element-selection-tray-heading">
+                          <span>
+                            <Sparkles size={14} />发送列表
+                            <b>{selectedElements.length}</b>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (elementEditTarget) elementTools.cancelEdits();
+                              setSelectedElements([]);
+                              setElementEditTarget(null);
+                            }}
+                          >
+                            清空
+                          </button>
+                        </div>
+                        <div className="element-selection-tray-list" role="list">
+                          {selectedElements.map((element) => (
+                            <div
+                              className={`element-selection-tray-item ${elementEditTarget?.kind === "queue-item" && elementEditTarget.key === element.key ? "is-focused" : ""}`}
+                              role="listitem"
+                              key={element.key}
+                            >
+                              <button
+                                type="button"
+                                className="element-selection-target"
+                                onClick={() => editSelectedElement(element)}
+                              >
+                                <span className="selected-element-icon" aria-hidden="true">
+                                  {element.comment ? <MessageSquareText size={13} /> : <Code2 size={13} />}
+                                </span>
+                                <span>
+                                  <code title={element.hint}>{element.hint}</code>
+                                  {element.comment && <small>{element.comment}</small>}
+                                  {!element.comment && element.changes && (
+                                    <small>已应用 {element.changes.length} 项样式修改</small>
+                                  )}
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                className="element-selection-remove"
+                                aria-label={`移除 ${element.hint}`}
+                                title="移除"
+                                onClick={() => {
+                                  setSelectedElements((current) =>
+                                    current.filter((item) => item.key !== element.key),
+                                  );
+                                  if (elementEditTarget?.kind === "queue-item"
+                                    && elementEditTarget.key === element.key) {
+                                    elementTools.cancelEdits();
+                                    setElementEditTarget(null);
+                                  }
+                                }}
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          className="element-selection-apply"
+                          disabled={isThinking}
+                          onClick={applySelectionListToComposer}
+                        >
+                          <Check size={14} />Apply 到对话
+                        </button>
+                    </section>
+                  </aside>
+                )}
+                {elementEditorState.status === "editing" && elementEditTarget && (() => {
                   const placement = elementEditorPosition();
                   return placement ? (
                     <ElementEditorPopover
+                      key={elementEditTarget.kind === "queue-item"
+                        ? `queue-${elementEditTarget.key}`
+                        : "preview-selection"}
                       state={elementEditorState}
+                      initialComment={elementEditTarget.kind === "queue-item"
+                        ? elementEditTarget.element.comment
+                        : ""}
                       position={placement.position}
                       placement={placement.placement}
                       onUpdate={updateElementEditor}
                       onCancel={() => closeElementEditor(false)}
-                      onCommit={() => closeElementEditor(true)}
+                      onCommit={(comment) => closeElementEditor(true, comment)}
                     />
                   ) : null;
                 })()}
@@ -1618,6 +2211,14 @@ function App() {
                     )}
                   </div>
                 </section>
+              </div>
+            )}
+            {checkpointLoading && (
+              <div className="checkpoint-loading-overlay" role="status" aria-live="polite">
+                <span>
+                  <RefreshCw className="checkpoint-spinner" size={17} />
+                  正在切换版本…
+                </span>
               </div>
             )}
           </div>
@@ -1662,6 +2263,7 @@ function App() {
                 autoFocus
                 required
                 maxLength={80}
+                disabled={creatingArtifact}
                 value={artifactDraftName}
                 placeholder="例如：智慧市政运行监测报告"
                 onChange={(event) => setArtifactDraftName(event.target.value)}
@@ -1679,6 +2281,7 @@ function App() {
                     type="radio"
                     name="technology-stack"
                     value={option.value}
+                    disabled={creatingArtifact}
                     checked={artifactDraftStack === option.value}
                     onChange={() => setArtifactDraftStack(option.value)}
                   />
@@ -1695,6 +2298,44 @@ function App() {
               启动预览和继续对话时会重新检测实际技术栈；如果项目中途切换，定位方式会自动降级或切换。
             </p>
 
+            {artifactCreationPhase !== "idle" && (
+              <section className="artifact-creation-progress" aria-live="polite">
+                <div className="artifact-creation-progress-heading">
+                  <span>{artifactCreationPhase === "ready" ? "创建完成" : artifactCreationError ? "创建遇到问题" : "正在准备产物"}</span>
+                  <small>{artifactCreationPhase === "ready" ? "预览已经可以使用" : "请保持此窗口开启"}</small>
+                </div>
+                <ol>
+                  {ARTIFACT_CREATION_STEPS.map((step, index) => {
+                    const status = artifactCreationStepState(
+                      artifactCreationPhase,
+                      step.phase,
+                      Boolean(artifactCreationError),
+                    );
+                    return (
+                      <li className={`is-${status}`} key={step.phase}>
+                        <span className="artifact-creation-step-marker">
+                          {status === "complete" || artifactCreationPhase === "ready" ? (
+                            <Check size={13} />
+                          ) : status === "error" ? (
+                            <X size={13} />
+                          ) : status === "active" ? (
+                            <RefreshCw className="spin" size={13} />
+                          ) : (
+                            index + 1
+                          )}
+                        </span>
+                        <span>
+                          <strong>{step.label}</strong>
+                          <small>{step.description}</small>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+                {artifactCreationError && <p>{artifactCreationError}</p>}
+              </section>
+            )}
+
             <div className="artifact-dialog-actions">
               <button
                 type="button"
@@ -1704,7 +2345,11 @@ function App() {
                 取消
               </button>
               <button type="submit" disabled={creatingArtifact || !artifactDraftName.trim()}>
-                {creatingArtifact ? "正在创建…" : "创建并启动"}
+                {creatingArtifact
+                  ? "正在创建…"
+                  : artifactCreationError
+                  ? "重新创建"
+                  : "创建并启动"}
               </button>
             </div>
           </form>

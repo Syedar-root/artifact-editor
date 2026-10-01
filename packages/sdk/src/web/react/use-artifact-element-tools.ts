@@ -43,6 +43,7 @@ export interface UseArtifactElementToolsOptions {
 export interface ArtifactElementTools {
   activeElements: ElementInspection[];
   editorState: ElementEditorState;
+  selectElement(element: Element): void;
   confirmSelections(): ElementSelection[];
   updateProperty(
     property: ElementEditPropertyId,
@@ -125,6 +126,10 @@ export function useArtifactElementTools({
     return inspectorRef.current?.confirmActiveSelections() ?? [];
   }, []);
 
+  const selectElement = useCallback((element: Element) => {
+    inspectorRef.current?.selectElement(element);
+  }, []);
+
   const updateProperty = useCallback((
     property: ElementEditPropertyId,
     value: ElementEditPropertyValue,
@@ -154,6 +159,7 @@ export function useArtifactElementTools({
   return {
     activeElements,
     editorState,
+    selectElement,
     confirmSelections,
     updateProperty,
     commitEdits,

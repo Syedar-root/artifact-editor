@@ -45,7 +45,6 @@ function collectAttributes(element: Element): Record<string, string> {
       || attribute.name === "id"
       || attribute.name === "style"
       || attribute.name.startsWith("data-insp-")
-      || attribute.name === "data-artifact-source"
     ) continue;
     result[attribute.name] = attribute.value.slice(0, 160);
   }
@@ -74,7 +73,6 @@ export function describeElement(element: Element): ElementSelection {
   const classNames = classNamesOf(element);
   const ancestors = buildAncestorPath(element);
   const path = ancestors.join(" > ");
-  const sourceId = element.getAttribute?.("data-artifact-source") || "";
   const source = parseInspectorSource(element.getAttribute?.("data-insp-path") || "");
   const text = compactText(element.textContent, MAX_TEXT_LENGTH);
   const outerHTML = compactText(element.outerHTML, MAX_OUTER_HTML_LENGTH);
@@ -91,7 +89,6 @@ export function describeElement(element: Element): ElementSelection {
       ...(text ? { text } : {}),
       ...(outerHTML ? { outerHTML } : {}),
     },
-    ...(sourceId ? { sourceId } : {}),
     ...(source ? { source } : {}),
   };
 }
