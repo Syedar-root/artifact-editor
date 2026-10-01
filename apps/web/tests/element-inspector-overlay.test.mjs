@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   createElementInspectorOverlay,
   figmaInspectorTheme,
-} from "@artifact-editor/sdk/overlay";
+} from "@artifact-editor/sdk/web/overlay";
 
 class FakeNode {
   constructor(tagName) {

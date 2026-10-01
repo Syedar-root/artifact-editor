@@ -12,11 +12,11 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "paths": {
-      "@artifact-editor/sdk": ["../../packages/sdk/src/index.ts"],
-      "@artifact-editor/sdk/react": ["../../packages/sdk/src/react/index.ts"],
-      "@artifact-editor/sdk/overlay": ["../../packages/sdk/src/element-inspector-overlay/index.ts"],
-      "@artifact-editor/sdk/element-inspector": ["../../packages/sdk/src/element-inspector/index.ts"],
-      "@artifact-editor/sdk/element-editor": ["../../packages/sdk/src/element-editor/index.ts"]
+      "@artifact-editor/sdk/web": ["../../packages/sdk/src/web/index.ts"],
+      "@artifact-editor/sdk/web/react": ["../../packages/sdk/src/web/react/index.ts"],
+      "@artifact-editor/sdk/web/overlay": ["../../packages/sdk/src/web/element-inspector-overlay/index.ts"],
+      "@artifact-editor/sdk/web/element-inspector": ["../../packages/sdk/src/web/element-inspector/index.ts"],
+      "@artifact-editor/sdk/web/element-editor": ["../../packages/sdk/src/web/element-editor/index.ts"]
     },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,

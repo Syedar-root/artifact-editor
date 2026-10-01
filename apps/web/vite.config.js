@@ -9,20 +9,20 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@artifact-editor/sdk/react": path.join(sdkSourceRoot, "react/index.ts"),
-      "@artifact-editor/sdk/overlay": path.join(
+      "@artifact-editor/sdk/web/react": path.join(sdkSourceRoot, "web/react/index.ts"),
+      "@artifact-editor/sdk/web/overlay": path.join(
         sdkSourceRoot,
-        "element-inspector-overlay/index.ts",
+        "web/element-inspector-overlay/index.ts",
       ),
-      "@artifact-editor/sdk/element-inspector": path.join(
+      "@artifact-editor/sdk/web/element-inspector": path.join(
         sdkSourceRoot,
-        "element-inspector/index.ts",
+        "web/element-inspector/index.ts",
       ),
-      "@artifact-editor/sdk/element-editor": path.join(
+      "@artifact-editor/sdk/web/element-editor": path.join(
         sdkSourceRoot,
-        "element-editor/index.ts",
+        "web/element-editor/index.ts",
       ),
-      "@artifact-editor/sdk": path.join(sdkSourceRoot, "index.ts"),
+      "@artifact-editor/sdk/web": path.join(sdkSourceRoot, "web/index.ts"),
     },
   },
   server: {

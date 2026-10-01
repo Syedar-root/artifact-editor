@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   createArtifactInspectorVitePlugin,
   supportsPreciseSourceLocation,
-} from "../src/vite/adapter.js";
+} from "../src/web/vite/adapter.js";
 
 test("HTML 使用运行时 hint，不创建源码定位插件", () => {
   let called = false;

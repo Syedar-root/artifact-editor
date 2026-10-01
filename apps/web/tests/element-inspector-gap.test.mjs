@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateGapRects } from "../../../packages/sdk/src/element-inspector/gap-geometry.ts";
-import { createElementInspector } from "@artifact-editor/sdk/element-inspector";
-import { describeElement } from "../../../packages/sdk/src/element-inspector/selection.ts";
+import { calculateGapRects } from "../../../packages/sdk/src/web/element-inspector/gap-geometry.ts";
+import { createElementInspector } from "@artifact-editor/sdk/web/element-inspector";
+import { describeElement } from "../../../packages/sdk/src/web/element-inspector/selection.ts";
 
 class FakeEventTarget {
   listeners = new Map();

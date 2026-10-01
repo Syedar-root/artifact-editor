@@ -4,49 +4,81 @@
   "type": "module",
   "files": [
     "dist",
-    "README.md",
-    "SOURCE_LOCATOR.md"
+    "README.md"
   ],
   "exports": {
+    "./web": {
+      "types": "./dist/web/index.d.ts",
+      "import": "./dist/web/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./server/docker": {
+      "types": "./dist/server/docker-sandbox.d.ts",
+      "import": "./dist/server/docker-sandbox.js"
+    },
+    "./web/react": {
+      "types": "./dist/web/react/index.d.ts",
+      "import": "./dist/web/react/index.js"
+    },
+    "./web/vite": {
+      "types": "./dist/web/vite/adapter.d.ts",
+      "import": "./dist/web/vite/adapter.js"
+    },
+    "./web/element-editor": {
+      "types": "./dist/web/element-editor/index.d.ts",
+      "import": "./dist/web/element-editor/index.js"
+    },
+    "./web/element-inspector": {
+      "types": "./dist/web/element-inspector/index.d.ts",
+      "import": "./dist/web/element-inspector/index.js"
+    },
+    "./web/overlay": {
+      "types": "./dist/web/element-inspector-overlay/index.d.ts",
+      "import": "./dist/web/element-inspector-overlay/index.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./element-editor": {
-      "types": "./dist/element-editor/index.d.ts",
-      "import": "./dist/element-editor/index.js"
+      "types": "./dist/web/element-editor/index.d.ts",
+      "import": "./dist/web/element-editor/index.js"
     },
     "./element-inspector": {
-      "types": "./dist/element-inspector/index.d.ts",
-      "import": "./dist/element-inspector/index.js"
+      "types": "./dist/web/element-inspector/index.d.ts",
+      "import": "./dist/web/element-inspector/index.js"
     },
     "./overlay": {
-      "types": "./dist/element-inspector-overlay/index.d.ts",
-      "import": "./dist/element-inspector-overlay/index.js"
+      "types": "./dist/web/element-inspector-overlay/index.d.ts",
+      "import": "./dist/web/element-inspector-overlay/index.js"
     },
     "./react": {
-      "types": "./dist/react/index.d.ts",
-      "import": "./dist/react/index.js"
+      "types": "./dist/web/react/index.d.ts",
+      "import": "./dist/web/react/index.js"
     },
     "./vite": {
-      "types": "./dist/vite/adapter.d.ts",
-      "import": "./dist/vite/adapter.js"
-    },
-    "./vite/source-locator": {
-      "types": "./dist/vite/source-locator.d.ts",
-      "import": "./dist/vite/source-locator.js"
+      "types": "./dist/web/vite/adapter.d.ts",
+      "import": "./dist/web/vite/adapter.js"
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/build.mjs",
     "prepare": "npm run build",
-    "test": "npm run build && node --test test/*.test.js",
-    "check": "npm run build && node --check dist/vite/adapter.js && node --check dist/vite/source-locator.js"
+    "test": "npm run build && node --test test/*.test.js test/server/*.test.js",
+    "test:server": "npm run build && node --test test/server/*.test.js",
+    "check": "npm run build && node --check dist/web/vite/adapter.js"
   },
   "peerDependencies": {
     "react": ">=18"
   },
+  "peerDependenciesMeta": {
+    "react": { "optional": true }
+  },
   "devDependencies": {
+    "@types/node": "^22.20.4",
     "@types/react": "^19.3.0",
     "acorn": "latest",
     "react": "latest",

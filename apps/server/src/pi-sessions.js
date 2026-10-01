@@ -1,7 +1,6 @@
-import { spawn } from "node:child_process";
+import { runSandboxNode } from "./sandbox.js";
 
-export const PI_CONTAINER_ID =
-  "3d676529c2ce5d5967767a8b3fcb32b2b5faac60a86ec7aa13fce04400c308b4";
+export { PI_CONTAINER_ID } from "./sandbox.js";
 export const PI_SESSION_DIR = "/workspace/.artifact-pi-sessions";
 
 const SESSION_ID_PATTERN =
@@ -25,6 +24,72 @@ function textFromContent(content) {
     .map((block) => block.text)
     .join("\n")
     .trim();
+}
+
+const CONTEXT_OPEN = '\n\n<artifact-editor-context>\n';
+const CONTEXT_CLOSE = '\n</artifact-editor-context>';
+const LEGACY_CONTEXT_OPEN = '\n\n以下是用户在预览中选择的运行时 DOM hint：\n\n';
+
+function compactAttachment(value) {
+  if (!value || typeof value !== 'object' || typeof value.hint !== 'string') return null;
+  return {
+    hint: value.hint,
+    ...(typeof value.comment === 'string' && value.comment.trim()
+      ? { comment: value.comment.trim() }
+      : {}),
+    ...(value.source && typeof value.source.file === 'string'
+      ? { source: value.source }
+      : {}),
+    ...(Array.isArray(value.changes) ? { changes: value.changes } : {}),
+  };
+}
+
+function legacyAttachments(context) {
+  return context
+    .split(/\n\n(?=\[元素 \d+\])/u)
+    .flatMap((block) => {
+      const hint = block.match(/^DOM 路径：(.+)$/mu)?.[1]?.trim();
+      if (!hint) return [];
+      const comment = block.match(/^用户评论：(.+)$/mu)?.[1]?.trim();
+      const sourceValue = block.match(/^源码位置：(.+)$/mu)?.[1]?.trim() || '';
+      const sourceMatch = sourceValue.match(/^(.*):(\d+):(\d+)$/u);
+      return [{
+        hint,
+        ...(comment ? { comment } : {}),
+        ...(sourceMatch ? {
+          source: {
+            file: sourceMatch[1],
+            line: Number(sourceMatch[2]),
+            column: Number(sourceMatch[3]),
+          },
+        } : {}),
+      }];
+    });
+}
+
+function presentUserMessage(text) {
+  const contextStart = text.indexOf(CONTEXT_OPEN);
+  if (contextStart >= 0) {
+    const contextEnd = text.lastIndexOf(CONTEXT_CLOSE);
+    if (contextEnd > contextStart) {
+      try {
+        const payload = JSON.parse(text.slice(contextStart + CONTEXT_OPEN.length, contextEnd));
+        const attachments = Array.isArray(payload.elements)
+          ? payload.elements.map(compactAttachment).filter(Boolean)
+          : [];
+        return { text: text.slice(0, contextStart).trim(), attachments };
+      } catch {}
+    }
+  }
+
+  const legacyStart = text.indexOf(LEGACY_CONTEXT_OPEN);
+  if (legacyStart >= 0) {
+    return {
+      text: text.slice(0, legacyStart).trim(),
+      attachments: legacyAttachments(text.slice(legacyStart + LEGACY_CONTEXT_OPEN.length)),
+    };
+  }
+  return { text, attachments: [] };
 }
 
 function readSession(filePath) {
@@ -61,10 +126,12 @@ function readSession(filePath) {
     if (role !== "user" && role !== "assistant") return [];
     const text = textFromContent(entry.message.content) || entry.message.errorMessage || "";
     if (!text) return [];
+    const presentation = role === "user" ? presentUserMessage(text) : { text, attachments: [] };
     return [{
       id: entry.id,
       role: role === "assistant" ? "agent" : "user",
-      text,
+      text: presentation.text,
+      ...(presentation.attachments.length > 0 ? { attachments: presentation.attachments } : {}),
       error: role === "assistant" && entry.message.stopReason === "error",
       timestamp: new Date(entry.message.timestamp || entry.timestamp).toISOString(),
     }];
@@ -116,40 +183,6 @@ if (requestedId) {
 }
 `;
 
-function runDocker(args) {
-  return new Promise((resolve, reject) => {
-    const child = spawn("docker", args, {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    let size = 0;
-
-    const collect = (chunk, current) => {
-      size += chunk.length;
-      if (size > MAX_SESSION_OUTPUT) {
-        child.kill();
-        reject(new Error("pi Agent 会话数据过大"));
-        return current;
-      }
-      return current + chunk.toString("utf8");
-    };
-
-    child.stdout.on("data", (chunk) => {
-      stdout = collect(chunk, stdout);
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr = collect(chunk, stderr);
-    });
-    child.once("error", reject);
-    child.once("close", (code) => {
-      if (code === 0) resolve(stdout);
-      else reject(new Error(stderr.trim() || `读取 pi Agent 会话失败：${code}`));
-    });
-  });
-}
-
 export function isValidSessionId(value) {
   return typeof value === "string" && SESSION_ID_PATTERN.test(value);
 }
@@ -159,17 +192,12 @@ export async function readPiSessions(sessionId = "", artifactId = "") {
     throw new Error("无效的 session ID");
   }
 
-  const output = await runDocker([
-    "exec",
-    PI_CONTAINER_ID,
-    "node",
-    "-e",
-    READ_SESSIONS_SCRIPT,
+  const output = await runSandboxNode(READ_SESSIONS_SCRIPT, [
     PI_SESSION_DIR,
     sessionId,
     "/workspace",
     artifactId,
-  ]);
+  ], { maxOutputBytes: MAX_SESSION_OUTPUT });
 
   return JSON.parse(output);
 }

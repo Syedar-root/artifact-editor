@@ -10,8 +10,8 @@ const sdkSourceRoot = path.resolve(webRoot, "../../packages/sdk/src");
 
 test("Web 开发模式不依赖预先生成的 SDK dist", async () => {
   assert.equal(
-    webConfig.resolve?.alias?.["@artifact-editor/sdk/react"],
-    path.join(sdkSourceRoot, "react/index.ts"),
+    webConfig.resolve?.alias?.["@artifact-editor/sdk/web/react"],
+    path.join(sdkSourceRoot, "web/react/index.ts"),
   );
 
   const result = await build({

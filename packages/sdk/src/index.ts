@@ -1,3 +1,2 @@
-export * from "./element-editor/index.ts";
-export * from "./element-inspector/index.ts";
-export * from "./element-inspector-overlay/index.ts";
+// Compatibility entry point; new consumers should import @artifact-editor/sdk/web.
+export * from "./web/index.ts";

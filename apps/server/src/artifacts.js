@@ -1,25 +1,26 @@
-import { spawn } from "node:child_process";
+import fs from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { PI_CONTAINER_ID } from "./pi-sessions.js";
+import { requireSuccess, shellCommand, shellQuote } from "@artifact-editor/sdk/server";
+import {
+  artifactRoot, initializeArtifactWorkspace, isValidArtifactId,
+  runSandboxNode, sandbox, SANDBOX_WORKSPACE_ROOT, workspaceForArtifact,
+} from "./sandbox.js";
 
-export const SANDBOX_WORKSPACE_ROOT = "/workspace";
-
-const ARTIFACT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$|^[a-z0-9]$/u;
-const PREVIEW_PORT_START = 5173;
-const PREVIEW_PORT_END = 5999;
-const MAX_DOCKER_OUTPUT = 4 * 1024 * 1024;
+export { artifactRoot, isValidArtifactId, SANDBOX_WORKSPACE_ROOT } from "./sandbox.js";
+const PREVIEW_PORT = 5173;
 const TECHNOLOGY_STACKS = new Set(["html", "react", "vue"]);
 const SDK_VITE_ADAPTER_PATH = fileURLToPath(
-  import.meta.resolve("@artifact-editor/sdk/vite"),
+  import.meta.resolve("@artifact-editor/sdk/web/vite"),
 );
+let previewTransition = Promise.resolve();
 
 const DISCOVER_ARTIFACTS_SCRIPT = String.raw`
 const fs = require("node:fs");
 const path = require("node:path");
 
 const workspaceRoot = path.resolve(process.argv[1]);
-const startPort = Number(process.argv[2]);
+const previewPort = Number(process.argv[2]);
 const metadataDirectoryName = ".artifact";
 const metadataFileName = "metadata.json";
 
@@ -32,24 +33,6 @@ const candidates = fs.readdirSync(workspaceRoot, { withFileTypes: true })
     return fs.existsSync(path.join(root, "package.json")) || fs.existsSync(path.join(root, "index.html"));
   })
   .sort((left, right) => left.name.localeCompare(right.name));
-
-const usedPorts = new Set();
-for (const entry of candidates) {
-  const metadataPath = path.join(workspaceRoot, entry.name, metadataDirectoryName, metadataFileName);
-  try {
-    const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
-    if (Number.isInteger(metadata.previewPort)) usedPorts.add(metadata.previewPort);
-  } catch {}
-}
-
-let nextPort = startPort;
-function allocatePort() {
-  while (usedPorts.has(nextPort)) nextPort += 1;
-  const port = nextPort;
-  usedPorts.add(port);
-  nextPort += 1;
-  return port;
-}
 
 function displayName(root, fallback) {
   try {
@@ -131,7 +114,7 @@ const artifacts = candidates.map((entry) => {
     name: typeof metadata.name === "string" && metadata.name.trim()
       ? metadata.name.trim()
       : displayName(root, entry.name),
-    previewPort: Number.isInteger(metadata.previewPort) ? metadata.previewPort : allocatePort(),
+    previewPort,
     createdAt: typeof metadata.createdAt === "string"
       ? metadata.createdAt
       : (stats.birthtime || stats.ctime).toISOString(),
@@ -276,6 +259,7 @@ fs.writeFileSync(
 );
 if (requestedStack === "vue") fs.writeFileSync(path.join(root, "src", "App.vue"), vueApp);
 fs.writeFileSync(path.join(root, "src", "style.css"), styleCss);
+fs.writeFileSync(path.join(root, ".gitignore"), ["node_modules/", "dist/", ".vite/", ".artifact/", ""].join("\n"));
 fs.writeFileSync(path.join(root, ".artifact", "metadata.json"), JSON.stringify(metadata, null, 2) + "\n");
 process.stdout.write(JSON.stringify(metadata));
 `;
@@ -345,35 +329,23 @@ if (changed) fs.writeFileSync(configPath, config);
 process.stdout.write(JSON.stringify({ changed }));
 `;
 
-function runDocker(args, { maxOutput = MAX_DOCKER_OUTPUT } = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn("docker", args, {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    let outputSize = 0;
+const STOP_MANAGED_PREVIEWS_SCRIPT = String.raw`
+const fs = require("node:fs");
 
-    const collect = (chunk, current) => {
-      outputSize += chunk.length;
-      if (outputSize > maxOutput) {
-        child.kill();
-        reject(new Error("沙箱返回内容过大"));
-        return current;
-      }
-      return current + chunk.toString("utf8");
-    };
-
-    child.stdout.on("data", (chunk) => { stdout = collect(chunk, stdout); });
-    child.stderr.on("data", (chunk) => { stderr = collect(chunk, stderr); });
-    child.once("error", reject);
-    child.once("close", (code) => {
-      if (code === 0) resolve(stdout);
-      else reject(new Error(stderr.trim() || `沙箱命令执行失败：${code}`));
-    });
-  });
+for (const entry of fs.readdirSync("/proc", { withFileTypes: true })) {
+  if (!entry.isDirectory() || !/^\d+$/u.test(entry.name)) continue;
+  if (Number(entry.name) === process.pid) continue;
+  try {
+    const args = fs
+      .readFileSync("/proc/" + entry.name + "/cmdline", "utf8")
+      .split("\0").filter(Boolean);
+    const managedVite = args.some(argument => argument.startsWith("/workspace/")
+      && argument.endsWith("/node_modules/.bin/vite"))
+      && args.includes(".artifact/vite.config.mjs");
+    if (managedVite) process.kill(Number(entry.name), "SIGTERM");
+  } catch {}
 }
+`;
 
 function toArtifact(metadata) {
   const requestedStack = TECHNOLOGY_STACKS.has(metadata.requestedStack)
@@ -408,24 +380,10 @@ function slugify(value) {
   return slug || `artifact-${randomBytes(3).toString("hex")}`;
 }
 
-export function isValidArtifactId(value) {
-  return typeof value === "string" && ARTIFACT_ID_PATTERN.test(value);
-}
-
-export function artifactRoot(artifactId) {
-  if (!isValidArtifactId(artifactId)) throw new Error("无效的 artifact ID");
-  return `${SANDBOX_WORKSPACE_ROOT}/${artifactId}`;
-}
-
 export async function listArtifacts() {
-  const output = await runDocker([
-    "exec",
-    PI_CONTAINER_ID,
-    "node",
-    "-e",
-    DISCOVER_ARTIFACTS_SCRIPT,
+  const output = await runSandboxNode(DISCOVER_ARTIFACTS_SCRIPT, [
     SANDBOX_WORKSPACE_ROOT,
-    String(PREVIEW_PORT_START),
+    String(PREVIEW_PORT),
   ]);
   const payload = JSON.parse(output);
   return payload.artifacts.map(toArtifact);
@@ -437,7 +395,7 @@ export async function getArtifact(artifactId) {
   return artifacts.find((artifact) => artifact.id === artifactId) || null;
 }
 
-export async function createArtifact(name, technologyStack = "html") {
+export async function createArtifact(name, technologyStack = "html", onProgress) {
   const trimmedName = typeof name === "string" ? name.trim() : "";
   if (!trimmedName || trimmedName.length > 80) throw new Error("产物名称应为 1–80 个字符");
   if (!TECHNOLOGY_STACKS.has(technologyStack)) throw new Error("请选择有效的技术栈");
@@ -448,16 +406,10 @@ export async function createArtifact(name, technologyStack = "html") {
   let id = baseId;
   while (ids.has(id)) id = `${baseId.slice(0, 42)}-${randomBytes(2).toString("hex")}`;
 
-  const usedPorts = artifacts.map((artifact) => Number(new URL(artifact.previewUrl, "http://local").pathname.split("/")[2]));
-  const previewPort = Math.max(PREVIEW_PORT_START - 1, ...usedPorts) + 1;
-  if (previewPort > PREVIEW_PORT_END) throw new Error("沙箱中可用的预览端口已耗尽");
+  const previewPort = PREVIEW_PORT;
 
-  const output = await runDocker([
-    "exec",
-    PI_CONTAINER_ID,
-    "node",
-    "-e",
-    CREATE_ARTIFACT_SCRIPT,
+  onProgress?.("workspace");
+  const output = await runSandboxNode(CREATE_ARTIFACT_SCRIPT, [
     SANDBOX_WORKSPACE_ROOT,
     id,
     trimmedName,
@@ -466,16 +418,10 @@ export async function createArtifact(name, technologyStack = "html") {
   ]);
   JSON.parse(output);
 
-  await runDocker([
-    "exec",
-    "-w",
-    artifactRoot(id),
-    PI_CONTAINER_ID,
-    "npm",
-    "install",
-    "--no-audit",
-    "--no-fund",
-  ]);
+  onProgress?.("dependencies");
+  requireSuccess(await workspaceForArtifact(id).execute("npm install --no-audit --no-fund"));
+
+  await initializeArtifactWorkspace(id);
 
   return getArtifact(id);
 }
@@ -502,11 +448,7 @@ async function ensureFrameworkLocator(artifact) {
   ) return artifact;
 
   try {
-    await runDocker([
-      "exec",
-      "-w",
-      artifactRoot(artifact.id),
-      PI_CONTAINER_ID,
+    requireSuccess(await workspaceForArtifact(artifact.id).execute(shellCommand([
       "npm",
       "install",
       "--no-save",
@@ -515,7 +457,7 @@ async function ensureFrameworkLocator(artifact) {
       "--no-fund",
       "code-inspector-plugin",
       artifact.detectedStack === "react" ? "@vitejs/plugin-react" : "@vitejs/plugin-vue",
-    ]);
+    ])));
     return (await getArtifact(artifact.id)) || artifact;
   } catch {
     // 定位插件不可用时保持 runtime hint，不能阻断产物预览。
@@ -523,61 +465,43 @@ async function ensureFrameworkLocator(artifact) {
   }
 }
 
-export async function startArtifact(artifactId) {
+async function startArtifactNow(artifactId, onProgress) {
   let artifact = await getArtifact(artifactId);
   if (!artifact) throw new Error("找不到这个产物");
+  await initializeArtifactWorkspace(artifactId);
+  onProgress?.("locator");
   artifact = await ensureFrameworkLocator(artifact);
 
   const previewPort = artifact.previewUrl.split("/")[2];
   const root = artifactRoot(artifactId);
-  const previewWasRunning = await previewIsReachable(artifact.previewUrl);
-  await runDocker([
-    "cp",
-    SDK_VITE_ADAPTER_PATH,
-    `${PI_CONTAINER_ID}:${root}/.artifact/artifact-editor-sdk-vite.mjs`,
-  ]);
-  const configOutput = await runDocker([
-    "exec",
-    PI_CONTAINER_ID,
-    "node",
-    "-e",
-    WRITE_PREVIEW_CONFIG_SCRIPT,
+  await workspaceForArtifact(artifactId).files.write(
+    ".artifact/artifact-editor-sdk-vite.mjs", await fs.readFile(SDK_VITE_ADAPTER_PATH, "utf8"),
+  );
+  const configOutput = await runSandboxNode(WRITE_PREVIEW_CONFIG_SCRIPT, [
     root,
     artifact.detectedStack,
     artifact.locatorMode,
   ]);
-  const { changed: previewConfigChanged } = JSON.parse(configOutput);
+  JSON.parse(configOutput);
+  onProgress?.("preview");
 
-  if (previewWasRunning && !previewConfigChanged) return artifact;
+  await runSandboxNode(STOP_MANAGED_PREVIEWS_SCRIPT);
+  await new Promise((resolve) => setTimeout(resolve, 300));
 
-  if (previewWasRunning) {
-    await runDocker([
-      "exec",
-      PI_CONTAINER_ID,
-      "fuser",
-      "-k",
-      `${previewPort}/tcp`,
-    ]).catch(() => {});
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  }
-
-  await runDocker([
-    "exec",
-    "-d",
-    "-e",
-    `ARTIFACT_PREVIEW_PORT=${previewPort}`,
-    "-w",
-    root,
-    PI_CONTAINER_ID,
-    "npx",
-    "vite",
-    "--config",
-    ".artifact/vite.config.mjs",
-  ]);
+  requireSuccess(await sandbox.bash(
+    `nohup npx vite --config .artifact/vite.config.mjs > ${shellQuote(".artifact/preview.log")} 2>&1 < /dev/null &`,
+    { cwd: root, env: { ARTIFACT_PREVIEW_PORT: previewPort } },
+  ));
 
   for (let attempt = 0; attempt < 30; attempt += 1) {
     if (await previewIsReachable(artifact.previewUrl)) return artifact;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error("产物预览启动超时");
+}
+
+export function startArtifact(artifactId, onProgress) {
+  const transition = previewTransition.then(() => startArtifactNow(artifactId, onProgress));
+  previewTransition = transition.catch(() => {});
+  return transition;
 }

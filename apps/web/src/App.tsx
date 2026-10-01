@@ -32,8 +32,8 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import { useArtifactElementTools } from "@artifact-editor/sdk/react";
-import type { ElementSelection } from "@artifact-editor/sdk/element-inspector";
+import { useArtifactElementTools } from "@artifact-editor/sdk/web/react";
+import type { ElementSelection } from "@artifact-editor/sdk/web/element-inspector";
 import { readJsonResponse } from "./api-response";
 import type {
   ElementEditGroup,
@@ -42,7 +42,7 @@ import type {
   ElementEditPropertyKey,
   ElementEditPropertyValue,
   ElementEditorEditingState,
-} from "@artifact-editor/sdk/element-editor";
+} from "@artifact-editor/sdk/web/element-editor";
 
 type MessageRole = "user" | "agent";
 

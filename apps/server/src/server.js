@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer, request as createHttpRequest } from "node:http";
 import { connect as connectSocket } from "node:net";
@@ -6,22 +5,21 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import {
-  artifactRoot,
   createArtifact,
   getArtifact,
   isValidArtifactId,
   listArtifacts,
   startArtifact,
 } from "./artifacts.js";
+import { initializeArtifactWorkspace, workspaceForArtifact } from "./sandbox.js";
+import { askPiAgent } from "./pi-agent.js";
 import { isValidSessionId, readPiSessions } from "./pi-sessions.js";
-import { readSandboxFile, readSandboxTree } from "./sandbox-files.js";
 
 const SERVER_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIST_ROOT = path.resolve(SERVER_ROOT, "../../web/dist");
 const IS_PRODUCTION = process.argv.includes("--production");
 const PORT = Number(process.env.PORT || (IS_PRODUCTION ? 4173 : 4174));
 const MAX_BODY_SIZE = 32 * 1024;
-const MAX_AGENT_OUTPUT = 2 * 1024 * 1024;
 const SANDBOX_PROXY_HOST = "127.0.0.1";
 const SANDBOX_PROXY_PORT = 18080;
 const SANDBOX_PROXY_PATTERN = /^\/proxy\/(5\d{3})\//u;
@@ -77,55 +75,35 @@ function proxySandboxUpgrade(request, socket, head) {
   socket.on("error", () => upstream.destroy());
 }
 
-function askPiAgent(prompt, { sessionId, sessionName = "", workdir }) {
-  return new Promise((resolve, reject) => {
-    const runnerArguments = [
-      path.join(SERVER_ROOT, "run-pi-agent.js"),
-      "--session-id",
-      sessionId,
-      ...(sessionName ? ["--session-name", sessionName] : []),
-      "--workdir",
-      workdir,
-      "--",
-      prompt,
-    ];
-    const child = spawn(process.execPath, runnerArguments, {
-      cwd: SERVER_ROOT,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    let outputSize = 0;
-
-    function collect(chunk, target) {
-      outputSize += chunk.length;
-      if (outputSize > MAX_AGENT_OUTPUT) {
-        child.kill();
-        reject(new Error("pi Agent 返回内容过长"));
-        return target;
-      }
-      return target + chunk.toString("utf8");
-    }
-
-    child.stdout.on("data", (chunk) => { stdout = collect(chunk, stdout); });
-    child.stderr.on("data", (chunk) => { stderr = collect(chunk, stderr); });
-    child.once("error", reject);
-    child.once("close", (code) => {
-      if (code === 0 && stdout.trim()) resolve(stdout.trim());
-      else reject(new Error(stderr.trim() || `pi Agent 退出码：${code}`));
-    });
-  });
-}
-
 function asyncRoute(handler) {
   return (request, response, next) => {
     Promise.resolve(handler(request, response, next)).catch(next);
   };
 }
 
+function wantsArtifactProgress(request) {
+  return request.get("accept")?.includes("application/x-ndjson");
+}
+
+function beginArtifactProgress(response) {
+  response.status(200);
+  response.setHeader("content-type", "application/x-ndjson; charset=utf-8");
+  response.setHeader("cache-control", "no-store");
+  response.setHeader("x-content-type-options", "nosniff");
+  response.flushHeaders();
+}
+
+function writeArtifactProgress(response, event) {
+  response.write(`${JSON.stringify(event)}\n`);
+}
+
 async function artifactExists(artifactId) {
   return isValidArtifactId(artifactId) && !!(await getArtifact(artifactId));
+}
+
+function checkpointVersion(value) {
+  const version = Number(value);
+  return Number.isSafeInteger(version) && version > 0 ? version : null;
 }
 
 const app = express();
@@ -149,6 +127,25 @@ app.get("/api/artifacts", asyncRoute(async (_request, response) => {
 }));
 
 app.post("/api/artifacts", asyncRoute(async (request, response) => {
+  if (wantsArtifactProgress(request)) {
+    beginArtifactProgress(response);
+    try {
+      const artifact = await createArtifact(
+        request.body?.name,
+        request.body?.technologyStack,
+        (phase) => writeArtifactProgress(response, { type: "progress", phase }),
+      );
+      writeArtifactProgress(response, { type: "complete", artifact });
+    } catch (error) {
+      writeArtifactProgress(response, {
+        type: "error",
+        error: error instanceof Error ? error.message : "无法创建产物",
+      });
+    } finally {
+      response.end();
+    }
+    return;
+  }
   try {
     const artifact = await createArtifact(
       request.body?.name,
@@ -163,6 +160,26 @@ app.post("/api/artifacts", asyncRoute(async (request, response) => {
 }));
 
 app.post("/api/artifacts/:artifactId/start", asyncRoute(async (request, response) => {
+  if (wantsArtifactProgress(request)) {
+    beginArtifactProgress(response);
+    try {
+      const artifactId = request.params.artifactId;
+      if (!isValidArtifactId(artifactId)) throw new Error("无效的 artifact ID");
+      const artifact = await startArtifact(
+        artifactId,
+        (phase) => writeArtifactProgress(response, { type: "progress", phase }),
+      );
+      writeArtifactProgress(response, { type: "complete", artifact });
+    } catch (error) {
+      writeArtifactProgress(response, {
+        type: "error",
+        error: error instanceof Error ? error.message : "无法启动产物预览",
+      });
+    } finally {
+      response.end();
+    }
+    return;
+  }
   try {
     const artifactId = request.params.artifactId;
     if (!isValidArtifactId(artifactId)) {
@@ -177,13 +194,62 @@ app.post("/api/artifacts/:artifactId/start", asyncRoute(async (request, response
   }
 }));
 
+app.get("/api/artifacts/:artifactId/checkpoints", asyncRoute(async (request, response) => {
+  const { artifactId } = request.params;
+  if (!(await artifactExists(artifactId))) {
+    response.status(404).json({ error: "找不到这个产物" });
+    return;
+  }
+  await initializeArtifactWorkspace(artifactId);
+  response.json(await workspaceForArtifact(artifactId).versions.inspect());
+}));
+
+app.post("/api/artifacts/:artifactId/checkpoints/:version/preview", asyncRoute(async (request, response) => {
+  const { artifactId } = request.params;
+  const version = checkpointVersion(request.params.version);
+  if (!(await artifactExists(artifactId)) || !version) {
+    response.status(400).json({ error: "产物或版本无效" });
+    return;
+  }
+  await initializeArtifactWorkspace(artifactId);
+  const snapshot = await workspaceForArtifact(artifactId).versions.checkout(version);
+  const artifact = await startArtifact(artifactId);
+  response.json({ ...snapshot, artifact });
+}));
+
+app.post("/api/artifacts/:artifactId/checkpoints/:version/edit", asyncRoute(async (request, response) => {
+  const { artifactId } = request.params;
+  const version = checkpointVersion(request.params.version);
+  if (!(await artifactExists(artifactId)) || !version) {
+    response.status(400).json({ error: "产物或版本无效" });
+    return;
+  }
+  await initializeArtifactWorkspace(artifactId);
+  const snapshot = await workspaceForArtifact(artifactId).versions.beginEdit(version);
+  const artifact = await startArtifact(artifactId);
+  response.json({ ...snapshot, artifact });
+}));
+
+app.post("/api/artifacts/:artifactId/checkpoints/resume", asyncRoute(async (request, response) => {
+  const { artifactId } = request.params;
+  if (!(await artifactExists(artifactId))) {
+    response.status(404).json({ error: "找不到这个产物" });
+    return;
+  }
+  await initializeArtifactWorkspace(artifactId);
+  const snapshot = await workspaceForArtifact(artifactId).versions.resume();
+  const artifact = await startArtifact(artifactId);
+  response.json({ ...snapshot, artifact });
+}));
+
 app.get("/api/sandbox/files", asyncRoute(async (request, response) => {
   const artifactId = typeof request.query.artifactId === "string" ? request.query.artifactId : "";
   if (!(await artifactExists(artifactId))) {
     response.status(400).json({ error: "请选择有效的产物" });
     return;
   }
-  response.json(await readSandboxTree(artifactId));
+  const workspace = workspaceForArtifact(artifactId);
+  response.json({ root: workspace.root, ...await workspace.files.list() });
 }));
 
 app.get("/api/sandbox/file", asyncRoute(async (request, response) => {
@@ -198,7 +264,7 @@ app.get("/api/sandbox/file", asyncRoute(async (request, response) => {
     return;
   }
   try {
-    response.json(await readSandboxFile(artifactId, filePath));
+    response.json(await workspaceForArtifact(artifactId).files.read(filePath));
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "无法读取沙箱文件",
@@ -267,11 +333,28 @@ app.post("/api/chat", asyncRoute(async (request, response) => {
   const sessionId = requestedSessionId || randomUUID();
   const sessionName = requestedSessionId ? "" : prompt.replace(/\s+/gu, " ").slice(0, 48);
   const technologyBefore = await getArtifact(artifactId);
-  const reply = await askPiAgent(prompt, {
-    sessionId,
-    sessionName,
-    workdir: artifactRoot(artifactId),
-  });
+  await initializeArtifactWorkspace(artifactId);
+  const controller = new AbortController();
+  const cancel = () => controller.abort(new Error("请求已取消"));
+  const onClose = () => { if (!response.writableEnded) cancel(); };
+  request.once("aborted", cancel);
+  response.once("close", onClose);
+  let mutation;
+  try {
+    mutation = await workspaceForArtifact(artifactId).edit({
+      message: prompt,
+      onError: "rollback",
+      expectedRevision: typeof request.body?.checkpointRevision === "string"
+        ? request.body.checkpointRevision
+        : "",
+    }, workspace => askPiAgent(prompt, {
+      sandbox: workspace.sandbox, cwd: workspace.root, sessionId, sessionName, signal: controller.signal,
+    }));
+  } finally {
+    request.removeListener("aborted", cancel);
+    response.removeListener("close", onClose);
+  }
+  const reply = mutation.value;
   let artifact = await getArtifact(artifactId);
   let runtimeWarning = "";
   const runtimeChanged = artifact && technologyBefore && (
@@ -285,7 +368,17 @@ app.post("/api/chat", asyncRoute(async (request, response) => {
       runtimeWarning = error instanceof Error ? error.message : "技术栈切换后预览重启失败";
     }
   }
-  response.json({ reply, sessionId, artifactId, artifact, runtimeWarning });
+  response.json({
+    reply,
+    sessionId,
+    artifactId,
+    artifact,
+    runtimeWarning,
+    changed: mutation.changed,
+    checkpoint: mutation.checkpoint,
+    checkpoints: mutation.checkpoints,
+    checkpointState: mutation.state,
+  });
 }));
 
 if (IS_PRODUCTION) {

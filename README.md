@@ -7,7 +7,9 @@ apps/
   web/       React + Vite 宿主界面
   server/    Express、Artifact/Session 管理与沙箱代理
 packages/
-  sdk/       通用 DOM 选择、编辑、React hook 与 Vite Adapter
+  sdk/
+    src/web/       无头 DOM 检查、属性编辑、overlay、React hook 与 Vite Adapter
+    src/server/    Sandbox Bash 接口、文件辅助操作、薄 Git 版本封装、可选 Docker 适配器
 ```
 
 ## 元素定位策略
@@ -39,4 +41,10 @@ npm start
 
 生产模式下 Express 在 `http://127.0.0.1:4173` 同时提供接口、沙箱预览代理和 Web 静态文件。
 
-Agent 配置继续从仓库根目录的 `.env` 读取。
+Agent 配置继续从仓库根目录的 `.env` 读取。宿主使用一个用户的已有容器，可通过 `ARTIFACT_SANDBOX_CONTAINER` 指定容器 ID。
+
+SDK server 只要求实现 `Sandbox.bash`，产物目录通过 `cwd` 传入。用户绑定、沙箱生命周期、产物信息和持久化由宿主管理。现有宿主的 Pi 对话、Workspace 编辑队列和 checkpoint 规则在 `apps/server` 中封装，通过 SDK 执行命令。SDK 保留旧浏览器导入入口，新的接入统一使用 `/web` 和 `/server`。
+
+执行接口、辅助方法与两种 Agent 接入示例见 [SDK 文档](packages/sdk/README.md)。
+
+`npm test` 运行 SDK、宿主版本工作流和 Web 回归检查；真实 Docker 测试通过 `SDK_DOCKER_CONTAINER` 指定容器。已启动宿主接口时，设置 `ARTIFACT_SERVER_TEST_URL` 和 `ARTIFACT_SANDBOX_CONTAINER` 后运行 `npm run test:integration --workspace @artifact-editor/server`，验证文件、版本、构建与预览。集成测试使用独立临时产物，并要求宿主预览槽位空闲。
