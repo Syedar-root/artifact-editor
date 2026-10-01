@@ -38,6 +38,7 @@ function createGapLayer(
 ): HTMLDivElement | null {
   const layer = createLayer(document, rect, theme.gapFill);
   if (!layer) return null;
+  layer.dataset.artifactInspector = "gap";
   layer.style.border = `1px dashed ${theme.gapAccent}`;
 
   const value = document.createElement("span");
@@ -50,11 +51,12 @@ function createGapLayer(
     "min-width:18px",
     "padding:2px 5px",
     "border-radius:4px",
-    `background:${theme.gapAccent}`,
-    `color:${theme.labelForeground}`,
-    `font:600 11px/1.3 ${theme.fontFamily}`,
+    `background:${theme.labelBackground ?? theme.gapAccent}`,
+    `color:${theme.labelBackground ? theme.gapAccent : theme.labelForeground}`,
+    ...(theme.labelBorder ? [`border:1px solid ${theme.labelBorder}`] : []),
+    `font:${theme.compactLabels ? "500 10px/1.4" : "600 11px/1.3"} ${theme.fontFamily}`,
     "text-align:center",
-    "box-shadow:0 1px 3px rgba(80,16,61,.18)",
+    "box-shadow:0 1px 4px rgba(25,31,46,.06)",
   ].join(";");
   layer.append(value);
   return layer;
@@ -79,6 +81,7 @@ function createMeasurementBadge(
   theme: ElementInspectorOverlayTheme,
 ): HTMLSpanElement {
   const badge = document.createElement("span");
+  badge.dataset.artifactInspector = "measurement";
   const viewport = document.defaultView;
   const x = Math.min(Math.max(12, measurement.x), (viewport?.innerWidth || 24) - 12);
   const y = Math.min(Math.max(9, measurement.y), (viewport?.innerHeight || 18) - 9);
@@ -89,12 +92,12 @@ function createMeasurementBadge(
     `top:${Math.round(y)}px`,
     "transform:translate(-50%,-50%)",
     "padding:1px 4px",
-    "border-radius:3px",
+    `border-radius:${theme.compactLabels ? 5 : 3}px`,
     `background:${theme.measurementBackground}`,
     `color:${color}`,
-    `border:1px solid ${color}`,
-    `font:600 10px/1.25 ${theme.fontFamily}`,
-    "box-shadow:0 1px 2px rgba(0,0,0,.10)",
+    `border:1px solid ${theme.labelBorder ?? color}`,
+    `font:${theme.compactLabels ? 500 : 600} 10px/1.25 ${theme.fontFamily}`,
+    "box-shadow:0 1px 4px rgba(25,31,46,.06)",
   ].join(";");
   return badge;
 }
@@ -186,11 +189,14 @@ export function createElementInspectorOverlay({
     root.replaceChildren();
   }
 
-  function appendRects(rects: BoxRect[], color: string) {
+  function appendRects(rects: BoxRect[], color: string, kind: "margin" | "padding" | "border") {
     if (!mountedDocument || !root) return;
     for (const rect of rects) {
       const layer = createLayer(mountedDocument, rect, color);
-      if (layer) root.append(layer);
+      if (layer) {
+        layer.dataset.artifactInspector = kind;
+        root.append(layer);
+      }
     }
   }
 
@@ -230,28 +236,45 @@ export function createElementInspectorOverlay({
     background = theme.selection,
   ) {
     const label = document.createElement("div");
-    const labelTop = rect.top >= theme.labelHeight + theme.labelGap + 4
+    const labelTop = theme.compactLabels || rect.top >= theme.labelHeight + theme.labelGap + 4
       ? rect.top - theme.labelHeight - theme.labelGap
       : rect.top + rect.height + theme.labelGap;
     label.textContent = text;
+    label.dataset.artifactInspector = "label";
+    const viewport = document.defaultView;
+    const labelLeft = Math.min(Math.max(6, rect.left), Math.max(6, (viewport?.innerWidth ?? 1024) - 100));
+    const labelY = Math.min(Math.max(4, labelTop), Math.max(4, (viewport?.innerHeight ?? 768) - theme.labelHeight - 4));
     label.style.cssText = [
       "position:fixed",
-      `left:${Math.round(Math.max(4, rect.left))}px`,
-      `top:${Math.round(Math.max(4, labelTop))}px`,
-      "max-width:calc(100vw - 8px)",
-      "padding:6px 9px",
-      "border-radius:5px",
-      `background:${background}`,
+      `left:${Math.round(labelLeft)}px`,
+      `top:${Math.round(labelY)}px`,
+      `max-width:calc(100vw - ${Math.round(labelLeft) + 6}px)`,
+      `padding:${theme.compactLabels ? "4px 8px" : "6px 9px"}`,
+      `border-radius:${theme.labelRadius ?? 5}px`,
+      `background:${theme.labelBackground ?? background}`,
+      ...(theme.labelBorder ? [`border:1px solid ${theme.labelBorder}`] : []),
+      "box-sizing:border-box",
       `color:${theme.labelForeground}`,
-      `font:600 12px/1.45 ${theme.fontFamily}`,
+      `font:${theme.compactLabels ? "500 10px/1.4" : "600 12px/1.45"} ${theme.fontFamily}`,
       "-webkit-font-smoothing:antialiased",
       "text-rendering:optimizeLegibility",
       "white-space:nowrap",
       "overflow:hidden",
       "text-overflow:ellipsis",
-      "box-shadow:0 2px 6px rgba(13,86,139,.18)",
+      "box-shadow:0 2px 8px rgba(25,31,46,.08)",
     ].join(";");
     overlayRoot.append(label);
+  }
+
+  function inspectionLabel(inspection: ElementInspection) {
+    const { selection, boxModel } = inspection;
+    const suffix = selection.id
+      ? `#${selection.id}`
+      : selection.classNames[0] ? `.${selection.classNames[0]}` : "";
+    const elementName = theme.compactLabels
+      ? `${selection.tagName}${suffix}`
+      : selection.hint;
+    return `${elementName} · ${Math.round(boxModel.rect.width)} × ${Math.round(boxModel.rect.height)}`;
   }
 
   function appendDetailedInspection(
@@ -260,10 +283,17 @@ export function createElementInspectorOverlay({
     inspection: ElementInspection,
   ) {
     const model = inspection.boxModel;
-    appendRects(edgeRects(model.rect, model.margin, true), theme.marginFill);
-    appendRects(edgeRects(model.rect, model.border), theme.borderFill);
+    if (theme.showBoxModel === false) {
+      const highlight = createLayer(document, model.rect, theme.contentFill);
+      if (highlight) overlayRoot.append(highlight);
+      appendOutline(document, overlayRoot, model.rect, theme.selection, theme.selectionWidth ?? 2);
+      appendLabel(document, overlayRoot, model.rect, inspectionLabel(inspection));
+      return;
+    }
+    appendRects(edgeRects(model.rect, model.margin, true), theme.marginFill, "margin");
+    appendRects(edgeRects(model.rect, model.border), theme.borderFill, "border");
     const paddingBox = inset(model.rect, model.border);
-    appendRects(edgeRects(paddingBox, model.padding), theme.paddingFill);
+    appendRects(edgeRects(paddingBox, model.padding), theme.paddingFill, "padding");
 
     const content = createLayer(document, inset(paddingBox, model.padding), theme.contentFill);
     if (content) overlayRoot.append(content);
@@ -274,12 +304,12 @@ export function createElementInspectorOverlay({
       if (gapLayer) overlayRoot.append(gapLayer);
     }
 
-    appendOutline(document, overlayRoot, model.rect, theme.selection, 2);
+    appendOutline(document, overlayRoot, model.rect, theme.selection, theme.selectionWidth ?? 2);
     appendLabel(
       document,
       overlayRoot,
       model.rect,
-      `${inspection.selection.hint} · ${Math.round(model.rect.width)}×${Math.round(model.rect.height)}`,
+      inspectionLabel(inspection),
     );
   }
 
@@ -301,7 +331,7 @@ export function createElementInspectorOverlay({
       for (const activeInspection of activeInspections) {
         const highlight = createLayer(document, activeInspection.boxModel.rect, theme.contentFill);
         if (highlight) overlayRoot.append(highlight);
-        appendOutline(document, overlayRoot, activeInspection.boxModel.rect, theme.selection, 2);
+        appendOutline(document, overlayRoot, activeInspection.boxModel.rect, theme.selection, theme.selectionWidth ?? 2);
       }
 
       const left = Math.min(...activeInspections.map(({ boxModel }) => boxModel.rect.left));
@@ -331,7 +361,7 @@ export function createElementInspectorOverlay({
         document,
         overlayRoot,
         hoverRect,
-        `${hoveredInspection.selection.hint} · ${Math.round(hoverRect.width)}×${Math.round(hoverRect.height)}`,
+        inspectionLabel(hoveredInspection),
         theme.hoverSelection,
       );
     }

@@ -1,4 +1,8 @@
-import type { ElementChangeSet, ElementPropertyChange } from "@artifact-editor/sdk/web/element-editor";
+import type { MessageElementAttachment } from "./types";
+import type {
+  ElementChangeSet,
+  ElementPropertyChange,
+} from "@artifact-editor/sdk/web/element-editor";
 import type {
   ElementInspection,
   ElementSelection,
@@ -15,7 +19,9 @@ export type ElementEditTarget =
   | { kind: "preview-selection" }
   | { kind: "queue-item"; key: number; element: SelectedElementItem };
 
-export function editingQueueItem(element: SelectedElementItem): ElementEditTarget {
+export function editingQueueItem(
+  element: SelectedElementItem,
+): ElementEditTarget {
   return { kind: "queue-item", key: element.key, element };
 }
 
@@ -26,9 +32,11 @@ function sameSelection(
   if (queued.element === inspection.element) return true;
   if (queued.element?.isConnected) return false;
   if (queued.source && inspection.selection.source) {
-    return queued.source.file === inspection.selection.source.file
-      && queued.source.line === inspection.selection.source.line
-      && queued.source.column === inspection.selection.source.column;
+    return (
+      queued.source.file === inspection.selection.source.file &&
+      queued.source.line === inspection.selection.source.line &&
+      queued.source.column === inspection.selection.source.column
+    );
   }
   return queued.domHint.path === inspection.selection.domHint.path;
 }
@@ -37,7 +45,9 @@ export function editingTargetForSelection(
   inspection: ElementInspection,
   elements: SelectedElementItem[],
 ): ElementEditTarget {
-  const existing = elements.find((element) => sameSelection(inspection, element));
+  const existing = elements.find((element) =>
+    sameSelection(inspection, element),
+  );
   return existing ? editingQueueItem(existing) : { kind: "preview-selection" };
 }
 
@@ -77,11 +87,7 @@ export function mergeEditedElement(
       changes: previousChanges,
       ...previousIdentity
     } = element;
-    const {
-      comment,
-      changes: currentChanges,
-      ...currentIdentity
-    } = edited;
+    const { comment, changes: currentChanges, ...currentIdentity } = edited;
     const changes = mergeChanges(previousChanges, currentChanges);
     return {
       ...previousIdentity,
@@ -91,4 +97,22 @@ export function mergeEditedElement(
       ...(changes ? { changes } : {}),
     };
   });
+}
+
+export const DEFAULT_ELEMENT_PROMPT =
+  "请结合这些元素的评论和已应用修改统一调整页面，并保持整体视觉风格一致。";
+
+export function toMessageElementAttachment(
+  element: SelectedElementItem,
+): MessageElementAttachment {
+  return {
+    tagName: element.tagName,
+    id: element.id,
+    classNames: element.classNames,
+    hint: element.hint,
+    domHint: element.domHint,
+    source: element.source,
+    comment: element.comment,
+    changes: element.changes,
+  };
 }

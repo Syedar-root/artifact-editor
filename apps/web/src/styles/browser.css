@@ -1,0 +1,94 @@
+.browser-bar {
+  display: flex;
+  height: 32px;
+  flex: 0 0 32px;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface);
+  padding: 0 14px;
+  color: var(--subtle);
+}
+
+.checkpoint-notice {
+  display: flex;
+  min-height: 42px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #ddd8b9;
+  background: #fffbe5;
+  padding: 7px 13px;
+  color: #645f3b;
+  font-size: 0.69rem;
+}
+
+.checkpoint-notice.is-editing {
+  border-bottom-color: #d8d2f2;
+  background: #f2f0ff;
+  color: #514985;
+}
+
+.checkpoint-notice > div {
+  display: flex;
+  gap: 6px;
+}
+
+.checkpoint-notice button {
+  min-height: 27px;
+  border: 1px solid rgba(80, 75, 45, 0.22);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
+  color: inherit;
+  padding: 0 9px;
+  cursor: pointer;
+  font-size: 0.63rem;
+  font-weight: 700;
+}
+
+.checkpoint-notice button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.sandbox-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  flex: 1;
+  border: 0;
+  background: #fff;
+}
+
+.preview-document {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.66rem;
+}
+
+.preview-document > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-live-state {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.62rem;
+}
+
+.preview-live-state i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #49a181;
+}

@@ -1,0 +1,314 @@
+.artifact-dialog-backdrop {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  background: rgba(24, 29, 40, 0.28);
+  padding: 24px;
+  backdrop-filter: blur(5px);
+}
+
+.artifact-dialog {
+  width: min(440px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  outline: 0;
+  background: var(--surface);
+  box-shadow: 0 24px 80px rgba(24, 29, 40, 0.18);
+  padding: 28px;
+}
+
+.artifact-dialog-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+
+.artifact-dialog-heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+.artifact-dialog-heading button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #777771;
+  cursor: pointer;
+}
+
+.artifact-dialog-heading button:hover {
+  background: #ecece8;
+  color: #242426;
+}
+
+.artifact-field {
+  display: grid;
+  gap: 7px;
+}
+
+.artifact-field > span,
+.technology-options legend {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.artifact-field input {
+  width: 100%;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  outline: none;
+  background: var(--surface-soft);
+  padding: 0 12px;
+  color: var(--ink);
+  font-size: 0.82rem;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.artifact-field input:focus {
+  border-color: #9e9ce5;
+  background: var(--surface);
+  box-shadow: 0 0 0 3px #5856d60a;
+}
+
+.technology-options {
+  display: grid;
+  gap: 8px;
+  margin: 24px 0 0;
+  border: 0;
+  padding: 0;
+}
+
+.technology-options legend {
+  margin-bottom: 8px;
+}
+
+.technology-options label {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  padding: 10px 13px;
+  cursor: pointer;
+}
+
+.technology-options label:hover,
+.technology-options label.is-selected {
+  border-color: #cbc9ec;
+  background: #f7f7fd;
+}
+
+.technology-options input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.technology-options label > span {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.technology-options strong {
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.technology-options i {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border: 1px solid #b8b7b1;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 4px #fff;
+}
+
+.technology-options label.is-selected i {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.artifact-creation-progress {
+  margin-top: 16px;
+  border: 1px solid #deded9;
+  border-radius: 12px;
+  background: #fff;
+  padding: 13px 14px;
+}
+
+.artifact-creation-progress-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #efefec;
+  padding-bottom: 10px;
+}
+
+.artifact-creation-progress-heading span {
+  color: #303033;
+  font-size: 0.75rem;
+  font-weight: 720;
+}
+
+.artifact-creation-progress ol {
+  display: grid;
+  gap: 0;
+  margin: 11px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.artifact-creation-progress li {
+  display: grid;
+  position: relative;
+  grid-template-columns: 25px minmax(0, 1fr);
+  gap: 9px;
+  min-height: 43px;
+  color: #a1a09a;
+}
+
+.artifact-creation-progress li:not(:last-child)::after {
+  position: absolute;
+  top: 23px;
+  bottom: 3px;
+  left: 11px;
+  width: 1px;
+  background: #e2e2de;
+  content: "";
+}
+
+.artifact-creation-step-marker {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border: 1px solid #d9d9d4;
+  border-radius: 50%;
+  background: #fafaf8;
+  font-size: 0.61rem;
+  font-weight: 700;
+}
+
+.artifact-creation-progress li > span:last-child {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 4px;
+}
+
+.artifact-creation-progress li strong {
+  font-size: 0.7rem;
+}
+
+.artifact-creation-progress li.is-active {
+  color: #4f46c8;
+}
+
+.artifact-creation-progress li.is-active .artifact-creation-step-marker {
+  border-color: #b9b3ef;
+  background: #efedff;
+}
+
+.artifact-creation-progress li.is-complete {
+  color: #49584b;
+}
+
+.artifact-creation-progress li.is-complete .artifact-creation-step-marker {
+  border-color: #b7d6ba;
+  background: #eaf6eb;
+  color: #34723a;
+}
+
+.artifact-creation-progress li.is-error {
+  color: #a43b3b;
+}
+
+.artifact-creation-progress li.is-error .artifact-creation-step-marker {
+  border-color: #efc0c0;
+  background: #fff0f0;
+}
+
+.artifact-creation-progress > p {
+  margin: 4px 0 0 34px;
+  color: #b04444;
+  font-size: 0.65rem;
+  line-height: 1.45;
+}
+
+.artifact-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 28px;
+}
+
+.artifact-dialog-actions button {
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 0 15px;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 500;
+}
+
+.artifact-dialog-actions button[type="submit"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+}
+
+.artifact-dialog-actions button:disabled,
+.artifact-dialog-heading button:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.artifact-field input:disabled,
+.technology-options input:disabled + span {
+  opacity: 0.58;
+}
+
+.artifact-field input::placeholder {
+  color: var(--subtle);
+}
+
+.technology-options label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.technology-options label:has(input:disabled) {
+  cursor: default;
+}
+
+.artifact-dialog-actions button:hover:not(:disabled) {
+  background: var(--surface-soft);
+}
+
+.artifact-dialog-actions button[type="submit"]:hover:not(:disabled) {
+  background: #363b46;
+  border-color: #363b46;
+}

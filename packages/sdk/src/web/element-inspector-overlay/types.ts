@@ -19,6 +19,13 @@ export interface ElementInspectorOverlayTheme {
   outlineOffset: number;
   labelGap: number;
   labelHeight: number;
+  /** 页面选择模式可以隐藏盒模型与间距诊断。 */
+  showBoxModel?: boolean;
+  compactLabels?: boolean;
+  labelBackground?: string;
+  labelBorder?: string;
+  labelRadius?: number;
+  selectionWidth?: number;
 }
 
 export interface ElementInspectorOverlay {

@@ -1,0 +1,172 @@
+.code-frame {
+  display: grid;
+  grid-template-columns: minmax(140px, 190px) minmax(0, 1fr);
+  border-color: #2e323b;
+  background: #20232b;
+  color: #e9ebf0;
+}
+
+.code-sidebar {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid #323640;
+  background: #252933;
+}
+
+.code-sidebar-heading {
+  display: flex;
+  height: 44px;
+  flex: 0 0 44px;
+  flex-direction: column;
+  justify-content: center;
+  border-bottom: 1px solid #323640;
+  padding: 0 14px;
+}
+
+.code-sidebar-heading strong {
+  overflow: hidden;
+  color: #d7d8da;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 620;
+}
+
+.file-tree {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 8px 6px 14px;
+  scrollbar-width: thin;
+  scrollbar-color: #474950 transparent;
+}
+
+.file-tree-row {
+  display: flex;
+  width: 100%;
+  height: 29px;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #aeb0b5;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.72rem;
+}
+
+.file-tree-row:hover {
+  background: #2a2b30;
+  color: #e6e6e4;
+}
+
+.file-tree-row.is-active {
+  background: #34353b;
+  color: #fff;
+}
+
+.file-tree-row > span:last-child {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-tree-spacer {
+  width: 13px;
+  flex: 0 0 13px;
+}
+
+.code-editor {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.code-heading {
+  display: flex;
+  height: 44px;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #323640;
+  padding: 0 16px;
+  color: #b6bbc8;
+  font-size: 0.72rem;
+}
+
+.code-heading > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.code-heading > div > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #9390ee;
+}
+
+.code-heading button {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: #b6b7ba;
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+
+.code-heading button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.code-content {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.code-content pre {
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 28px;
+  color: #cfd1d6;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.82rem;
+  line-height: 1.75;
+  tab-size: 2;
+}
+
+.code-empty-state {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  color: #7f8188;
+  padding: 24px;
+  text-align: center;
+  font-size: 0.74rem;
+}
+
+.code-empty-state.is-error {
+  color: #e18d7e;
+}

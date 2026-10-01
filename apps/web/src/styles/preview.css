@@ -1,0 +1,330 @@
+.preview-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-soft);
+}
+
+.preview-toolbar {
+  display: flex;
+  min-width: 0;
+  min-height: 56px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  padding: 10px 16px;
+}
+
+.view-tabs,
+.preview-tools,
+.view-tabs button,
+.code-heading,
+.code-heading > div,
+.code-heading button {
+  display: flex;
+  align-items: center;
+}
+
+.view-tabs {
+  position: relative;
+  isolation: isolate;
+  flex: 0 0 auto;
+  gap: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  padding: 3px;
+}
+
+.view-tabs button {
+  white-space: nowrap;
+  position: relative;
+  z-index: 1;
+  justify-content: center;
+  width: 72px;
+  height: 28px;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 8px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.view-tabs button.is-active {
+  color: var(--ink);
+}
+
+.preview-tools {
+  gap: 4px;
+}
+
+.checkpoint-switcher {
+  position: relative;
+}
+
+.checkpoint-button {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 0 9px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 550;
+}
+
+.checkpoint-button:disabled,
+.edit-mode-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.checkpoint-button[aria-busy="true"] {
+  opacity: 1;
+}
+
+.checkpoint-spinner {
+  animation: spin 650ms linear infinite;
+}
+
+.checkpoint-menu {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 290px;
+  max-height: min(390px, 60dvh);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 6px;
+  box-shadow: var(--shadow-popover);
+}
+
+.checkpoint-menu-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 8px 9px;
+  color: #777772;
+  font-size: 0.64rem;
+}
+
+.checkpoint-menu-heading strong {
+  color: #303033;
+  font-size: 0.73rem;
+}
+
+.checkpoint-menu > button {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 8px;
+  color: #4e4e51;
+  text-align: left;
+  cursor: pointer;
+}
+
+.checkpoint-menu > button:hover:not(:disabled) {
+  background: var(--surface-soft);
+}
+
+.checkpoint-menu > button.is-active {
+  background: var(--accent-soft);
+}
+
+.checkpoint-version {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.checkpoint-description {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.checkpoint-description b,
+.checkpoint-description small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkpoint-description b {
+  color: #343438;
+  font-size: 0.68rem;
+}
+
+.checkpoint-description small,
+.checkpoint-menu em {
+  color: #94948e;
+  font-size: 0.58rem;
+  font-style: normal;
+}
+
+.checkpoint-menu em {
+  border-radius: 5px;
+  background: #e4e3fb;
+  padding: 3px 6px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.edit-mode-button {
+  white-space: nowrap;
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 9px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.edit-mode-button:hover {
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.edit-mode-button.is-active {
+  border-color: #deddf6;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.checkpoint-error {
+  flex: 0 0 auto;
+  border-bottom: 1px solid #f0c7c4;
+  background: #fff0ef;
+  padding: 7px 16px;
+  color: #a13f39;
+  font-size: 0.68rem;
+}
+
+.toolbar-rule {
+  width: 1px;
+  height: 16px;
+  margin: 0 5px;
+  background: var(--line);
+}
+
+.canvas-area {
+  display: flex;
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  background: var(--surface-soft);
+  padding: 16px;
+}
+
+.checkpoint-loading-overlay {
+  display: grid;
+  position: absolute;
+  z-index: 60;
+  inset: 0;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.72);
+  color: #5046b8;
+  backdrop-filter: blur(2px);
+}
+
+.checkpoint-loading-overlay span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(80, 70, 184, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 24px rgba(34, 32, 62, 0.12);
+  padding: 9px 13px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.browser-frame,
+.code-frame {
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.browser-frame {
+  display: flex;
+  position: relative;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.view-tabs::before {
+  position: absolute;
+  z-index: 0;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: 72px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  content: "";
+  transition: transform 200ms var(--ease-out);
+}
+
+.view-tabs[data-view="code"]::before {
+  transform: translateX(72px);
+}
+
+.checkpoint-button:hover:not(:disabled), .checkpoint-button[aria-expanded="true"] {
+  border-color: #cbd0dc;
+  background: var(--surface-soft);
+}
+
+.preview-empty-state {
+  position: absolute;
+  inset: 32px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  background: var(--surface);
+  padding: 20px;
+  text-align: center;
+}
+
+.preview-empty-state .create-artifact-button {
+  margin-top: 24px;
+}

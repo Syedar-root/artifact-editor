@@ -1,0 +1,117 @@
+button, .technology-options label {
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.create-artifact-button, .send-button, .artifact-dialog-actions button, .element-selection-apply {
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease, transform 160ms var(--ease-out);
+}
+
+.create-artifact-button:active:not(:disabled), .send-button:active:not(:disabled), .artifact-dialog-actions button:active:not(:disabled), .element-selection-apply:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.project-switcher > svg:last-child, .checkpoint-button > svg:last-child {
+  transition: transform 180ms var(--ease-out);
+}
+
+.project-switcher[aria-expanded="true"] > svg:last-child, .checkpoint-button[aria-expanded="true"] > svg:last-child {
+  transform: rotate(180deg);
+}
+
+.artifact-menu, .checkpoint-menu {
+  transform-origin: top center;
+  animation: menu-in 180ms var(--ease-out) both;
+}
+
+.artifact-dialog-backdrop, .checkpoint-loading-overlay {
+  animation: fade-in 180ms ease both;
+}
+
+.artifact-dialog {
+  animation: dialog-in 240ms var(--ease-out) both;
+}
+
+.element-selection-tray, .selected-elements-panel {
+  animation: message-in 200ms var(--ease-out) both;
+}
+
+.browser-frame, .code-frame, .chat-empty-state {
+  animation: fade-in 220ms ease both;
+}
+
+.spin {
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes blink {
+  0%, 70%, 100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+
+  35% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

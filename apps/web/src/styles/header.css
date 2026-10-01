@@ -1,0 +1,206 @@
+.app-header {
+  z-index: 50;
+  display: flex;
+  height: 64px;
+  flex: 0 0 64px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  padding: 0 24px;
+}
+
+.brand-cluster, .header-actions, .brand, .project-switcher, .save-state {
+  display: flex;
+  align-items: center;
+}
+
+.brand-cluster {
+  min-width: 0;
+  gap: 20px;
+}
+
+.brand {
+  flex-shrink: 0;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 0.98rem;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+}
+
+.brand-mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--ink);
+  color: #fff;
+}
+
+.header-separator {
+  width: 1px;
+  height: 20px;
+  flex-shrink: 0;
+  background: var(--line);
+}
+
+.project-switcher {
+  min-width: 0;
+  gap: 12px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 0 10px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 550;
+}
+
+.project-switcher:hover:not(:disabled), .project-switcher[aria-expanded="true"] {
+  background: var(--surface-soft);
+}
+
+.project-switcher > svg {
+  color: var(--subtle);
+}
+
+.project-switcher span {
+  overflow: hidden;
+  max-width: 280px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-switcher {
+  position: relative;
+  min-width: 0;
+}
+
+.artifact-menu {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 12px);
+  left: 0;
+  width: 260px;
+  max-height: min(420px, 70dvh);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-popover);
+  padding: 6px;
+}
+
+.artifact-menu-label {
+  padding: 9px 10px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 550;
+}
+
+.artifact-menu button {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  text-align: left;
+}
+
+.artifact-menu button:hover:not(:disabled) {
+  background: var(--surface-soft);
+}
+
+.artifact-menu button.is-active {
+  background: var(--accent-soft);
+}
+
+.artifact-menu button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-selected-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.artifact-menu .artifact-create-button {
+  justify-content: flex-start;
+  margin-top: 6px;
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0 0 7px 7px;
+  padding-top: 12px;
+  color: var(--muted);
+}
+
+.header-actions {
+  min-width: 0;
+  gap: 16px;
+}
+
+.stack-badge {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  padding: 4px 8px;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.save-state {
+  gap: 6px;
+  font-size: 0.74rem;
+}
+
+.save-state.is-error {
+  max-width: 300px;
+  color: #b44b50;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.create-artifact-button {
+  display: inline-flex;
+  min-height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--ink);
+  color: #fff;
+  padding: 0 12px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 550;
+  box-shadow: var(--shadow-sm);
+}
+
+.create-artifact-button:hover:not(:disabled) {
+  background: #363b46;
+  border-color: #363b46;
+}
+
+.create-artifact-button:disabled {
+  opacity: 0.45;
+}

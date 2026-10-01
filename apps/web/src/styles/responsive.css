@@ -1,0 +1,252 @@
+@media (max-width: 1200px) {
+  .workspace {
+    grid-template-columns: minmax(300px, min(var(--chat-width, 420px), calc(100vw - 327px))) 7px minmax(0, 1fr);
+  }
+
+  .history-rail {
+    position: fixed;
+    z-index: 65;
+    top: 64px;
+    bottom: 0;
+    left: 0;
+    width: 260px;
+    visibility: hidden;
+    transform: translateX(-100%);
+    transition: transform 240ms var(--ease-out), visibility 240ms;
+    box-shadow: var(--shadow-popover);
+  }
+
+  .history-rail.is-open {
+    visibility: visible;
+    transform: translateX(0);
+  }
+
+  .mobile-only, .close-history {
+    display: grid;
+  }
+
+  .mobile-scrim {
+    position: fixed;
+    z-index: 60;
+    inset: 64px 0 0;
+    display: block;
+    border: 0;
+    background: rgba(24, 29, 40, 0.2);
+    backdrop-filter: blur(2px);
+    animation: fade-in 180ms ease both;
+  }
+
+  .brand-cluster {
+    gap: 12px;
+  }
+
+  .app-header {
+    padding: 0 16px;
+  }
+
+  .canvas-area {
+    padding: 12px;
+  }
+
+  .preview-toolbar {
+    padding: 10px 12px;
+  }
+}
+
+@media (max-width: 760px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(220px, 45%) minmax(0, 1fr);
+  }
+
+  .panel-resizer {
+    display: none;
+  }
+
+  .chat-panel {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .brand > span:last-child, .header-separator, .stack-badge {
+    display: none;
+  }
+
+  .brand-cluster {
+    gap: 8px;
+  }
+
+  .header-actions {
+    gap: 8px;
+  }
+
+  .project-switcher {
+    padding: 0 4px;
+    gap: 6px;
+  }
+
+  .project-switcher span {
+    max-width: clamp(80px, 28vw, 210px);
+  }
+
+  .save-state.is-error {
+    max-width: 100px;
+  }
+
+  .app-header {
+    padding: 0 12px;
+  }
+
+  .panel-heading {
+    height: 44px;
+    flex-basis: 44px;
+    padding: 0 16px;
+  }
+
+  .messages {
+    padding: 16px;
+  }
+
+  .chat-empty-state {
+    flex-shrink: 0;
+  }
+
+  .chat-empty-state .empty-state-mark {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+  }
+
+  .chat-empty-state h2 {
+    margin-top: 12px;
+    font-size: 1rem;
+  }
+
+  .chat-empty-state > p {
+    margin-top: 6px;
+  }
+
+  .prompt-suggestions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 14px;
+  }
+
+  .prompt-suggestions button {
+    min-height: 32px;
+    padding: 0 9px;
+    font-size: 0.68rem;
+  }
+
+  .prompt-suggestions button > svg {
+    display: none;
+  }
+
+  .composer-wrap {
+    padding: 8px 12px 12px;
+  }
+
+  .composer {
+    padding: 8px 10px;
+    gap: 0;
+    border-radius: 12px;
+  }
+
+  .composer textarea {
+    padding-bottom: 6px;
+  }
+
+  .preview-toolbar {
+    min-height: 50px;
+    padding: 7px 10px;
+  }
+
+  .canvas-area {
+    padding: 8px;
+  }
+
+  .preview-tools {
+    gap: 2px;
+  }
+
+  .toolbar-rule {
+    display: none;
+  }
+
+  .edit-mode-button {
+    padding: 0 6px;
+    font-size: 0.68rem;
+  }
+
+  .checkpoint-button {
+    padding: 0 6px;
+    gap: 4px;
+  }
+
+  .checkpoint-menu {
+    position: fixed;
+    top: auto;
+    right: 12px;
+    width: min(290px, calc(100vw - 24px));
+    max-height: 35dvh;
+  }
+
+  .code-frame {
+    grid-template-columns: 125px minmax(0, 1fr);
+  }
+
+  .code-content pre {
+    padding: 16px;
+    font-size: 0.75rem;
+  }
+
+  .artifact-dialog-backdrop {
+    padding: 16px;
+  }
+
+  .artifact-dialog {
+    max-height: calc(100dvh - 32px);
+    padding: 24px;
+  }
+
+  .checkpoint-notice {
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+}
+
+@media (max-width: 480px) {
+  .edit-mode-label {
+    display: none;
+  }
+
+  .edit-mode-button {
+    width: 32px;
+    flex-shrink: 0;
+    justify-content: center;
+    padding: 0;
+  }
+}
+
+@media (max-width: 380px) {
+  .view-tabs button, .view-tabs::before {
+    width: 60px;
+  }
+
+  .view-tabs button {
+    padding: 0 6px;
+  }
+
+  .view-tabs[data-view="code"]::before {
+    transform: translateX(60px);
+  }
+
+  .preview-tools > .icon-button {
+    width: 27px;
+  }
+
+  .edit-mode-button {
+    gap: 4px;
+  }
+}

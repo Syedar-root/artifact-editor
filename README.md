@@ -14,6 +14,8 @@ packages/
 
 ## 元素定位策略
 
+前端模块组织见 [前端宿主说明](apps/web/README.md)。
+
 - HTML + JavaScript 产物不修改 DOM，用户选择元素时采集祖先链路、关键属性、文本和 HTML，并作为运行时 hint 发送给 Agent；
 - React/Vue 产物使用 `code-inspector-plugin` 提供 `file:line:column`；
 - Artifact 同时保存创建时选择的技术栈和从当前源码检测到的技术栈。启动预览及 Agent 修改依赖后都会重新检测，必要时自动切换定位方式并重启预览。
