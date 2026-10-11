@@ -168,8 +168,8 @@ export function useWorkbench() {
     const registration = context.registerTool(
       {
         name: "send_agent_message",
-        title: "给 pi Agent 发消息",
-        description: "向沙箱中的 pi Agent 发送一条消息，并等待完整回复。",
+        title: "给 DSH Agent 发消息",
+        description: "向服务端 DSH Agent 发送一条消息，并等待完整回复。",
         inputSchema: {
           type: "object",
           properties: {
@@ -242,7 +242,7 @@ export function useWorkbench() {
             ...message,
             time: formatMessageTime(message.timestamp),
             details:
-              message.role === "agent" ? ["来自沙箱中的 pi Agent"] : undefined,
+              message.role === "agent" ? ["来自服务端 DSH Agent"] : undefined,
           }))
         : [];
       setMessages(nextMessages);
@@ -517,7 +517,7 @@ export function useWorkbench() {
         checkpoints?: CheckpointSummary[];
         checkpointState?: CheckpointState;
       }>(response);
-      if (!response.ok) throw new Error(payload.error || "pi Agent 调用失败");
+      if (!response.ok) throw new Error(payload.error || "DSH Agent 调用失败");
 
       setActiveSessionId(payload.sessionId);
       if (payload.artifact) {
@@ -543,7 +543,7 @@ export function useWorkbench() {
             minute: "2-digit",
             hour12: false,
           }),
-          details: ["来自沙箱中的 pi Agent"],
+          details: ["来自服务端 DSH Agent"],
         },
       ]);
       fetchSessionList(activeArtifactId).catch((error) => {
@@ -563,7 +563,7 @@ export function useWorkbench() {
           id: Date.now() + 1,
           role: "agent",
           error: true,
-          text: error instanceof Error ? error.message : "pi Agent 调用失败",
+          text: error instanceof Error ? error.message : "DSH Agent 调用失败",
           time: new Date().toLocaleTimeString("zh-CN", {
             hour: "2-digit",
             minute: "2-digit",

@@ -4,14 +4,42 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "node --watch src/server.js",
-    "start": "node src/server.js --production",
-    "test": "node --test test/*.test.js",
-    "test:integration": "node --test test/workspace-integration.test.js",
-    "check": "node --check src/server.js && node --check src/artifacts.js && node --check src/sandbox.js && node --check src/artifact-workspace.js && node --check src/artifact-versions.js && node --check src/pi-agent.js && node --check src/pi-sessions.js && node --check src/run-pi-agent.js"
+    "dev": "tsx watch --tsconfig tsconfig.json src/main.ts",
+    "start": "node dist/main.js --production",
+    "prebuild": "tsx scripts/clean-dist.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --import tsx --test test/*.test.ts",
+    "test:integration": "npm run build && node --import tsx --test test/workspace-integration.test.ts",
+    "check": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@agent-infra/sandbox": "1.0.17",
     "@artifact-editor/sdk": "0.1.0",
-    "express": "latest"
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-agent": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-agent-loop": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-launch-environment": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session-projection": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
+    "@nestjs/common": "^11.2.7",
+    "@nestjs/core": "^11.2.7",
+    "@nestjs/platform-express": "^11.2.7",
+    "dotenv": "^18.0.7",
+    "express": "latest",
+    "http-proxy": "1.18.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/http-proxy": "1.17.17",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   }
 }

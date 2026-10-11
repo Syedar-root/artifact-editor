@@ -117,7 +117,7 @@ const result = await sandbox.bash(
 
 SDK 不定义 Agent runtime、统一消息格式或工具注册机制。动态参数使用 `shellCommand` / `shellQuote`；文件内容通过 `stdin` 传输。
 
-本仓库示例宿主的版本历史、编辑队列和 Pi 对话适配位于 `apps/server`，可作为业务封装示例，不属于 SDK 接口。
+本仓库示例宿主的版本历史、编辑队列和 DSH 对话适配位于 `apps/server`，可作为业务封装示例，不属于 SDK 接口。
 
 ## 验证
 
