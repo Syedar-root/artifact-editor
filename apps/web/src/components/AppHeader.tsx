@@ -1,6 +1,14 @@
 import type { Workbench } from "../hooks/use-workbench";
 import { useEffect, useRef } from "react";
-import { Menu, ChevronDown, Layers2, Plus, X } from "lucide-react";
+import {
+  Menu,
+  ChevronDown,
+  Layers2,
+  Plus,
+  X,
+  Share2,
+  RefreshCw,
+} from "lucide-react";
 import { technologyLabel } from "../artifact-config";
 
 type Props = Pick<
@@ -18,6 +26,9 @@ type Props = Pick<
   | "artifactsError"
   | "isThinking"
   | "artifactDialogOpen"
+  | "shareArtifact"
+  | "shareLoading"
+  | "activeBuild"
 >;
 
 export function AppHeader(props: Props) {
@@ -35,6 +46,9 @@ export function AppHeader(props: Props) {
     artifactsError,
     isThinking,
     artifactDialogOpen,
+    shareArtifact,
+    shareLoading,
+    activeBuild,
   } = props;
   const menuRef = useRef<HTMLDivElement>(null);
   const switcherRef = useRef<HTMLButtonElement>(null);
@@ -132,19 +146,56 @@ export function AppHeader(props: Props) {
       </div>
 
       <div className="header-actions">
-        {artifactsError ? (
-          <span className="save-state is-error" role="alert" title={artifactsError}>
-            <X size={13} />{artifactsError}
+        {activeBuild && (
+          <span
+            className={`save-state build-state ${activeBuild.status === "failed" ? "is-error" : ""}`}
+            title={activeBuild.error}
+            role="status"
+          >
+            {activeBuild.status === "ready"
+              ? `V${activeBuild.version} 已构建`
+              : activeBuild.status === "failed"
+                ? `V${activeBuild.version} 构建失败`
+                : `V${activeBuild.version} 构建中…`}
           </span>
-        ) : activeArtifact && (
-          <span className="stack-badge">{technologyLabel(activeArtifact.detectedStack)}</span>
+        )}
+        <button
+          className="share-artifact-button"
+          aria-label={shareLoading ? "正在准备分享" : "分享产物"}
+          title="分享已保存版本"
+          onClick={shareArtifact}
+          disabled={!activeArtifact || shareLoading || isThinking}
+        >
+          {shareLoading ? (
+            <RefreshCw size={15} className="spin" />
+          ) : (
+            <Share2 size={15} />
+          )}
+          <span>{shareLoading ? "正在准备…" : "分享"}</span>
+        </button>
+        {artifactsError ? (
+          <span
+            className="save-state is-error"
+            role="alert"
+            title={artifactsError}
+          >
+            <X size={13} />
+            {artifactsError}
+          </span>
+        ) : (
+          activeArtifact && (
+            <span className="stack-badge">
+              {technologyLabel(activeArtifact.detectedStack)}
+            </span>
+          )
         )}
         <button
           className="create-artifact-button"
+          aria-label="新建产物"
           disabled={creatingArtifact || isThinking}
           onClick={openArtifactDialog}
         >
-          <Plus size={15} /> 新建产物
+          <Plus size={15} /> <span>新建产物</span>
         </button>
       </div>
     </header>

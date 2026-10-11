@@ -96,9 +96,8 @@ export class PreviewService implements OnModuleDestroy {
     let artifact = await this.repository.get(artifactId);
     if (!artifact) throw new Error("找不到这个产物");
     await this.workspaces.initialize(artifactId);
-    const workspace = this.workspaces.forArtifact(artifactId);
     onProgress?.("dependencies");
-    await workspace.prepareDependencies({ persistLock: false });
+    const workspace = await this.workspaces.ensureReady(artifactId);
     onProgress?.("locator");
     artifact = await this.ensureLocator(artifact);
     const previewPort = artifact.previewUrl.split("/")[2];
@@ -165,6 +164,11 @@ export class PreviewService implements OnModuleDestroy {
     }
   }
   private async closeSession(session: string) {
+    const sessions = SandboxResponse.data<Sandbox.BashSessionInfo[]>(
+      await this.client.bash.sessions(),
+    );
+    // 沙箱重建后内存中的旧 session 已不存在，无需再次关闭。
+    if (!sessions.some((item) => item.session_id === session)) return;
     SandboxResponse.data(
       await this.client.bash.closeSession(session, { timeoutInSeconds: 10 }),
     );

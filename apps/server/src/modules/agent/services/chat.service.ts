@@ -40,7 +40,7 @@ export class ChatService {
     const sessionId = requestedSessionId || randomUUID();
     const technologyBefore = await this.artifacts.require(artifactId);
     await this.artifacts.initialize(artifactId);
-    const workspace = this.artifacts.workspace(artifactId);
+    const workspace = await this.artifacts.ensureReady(artifactId, signal);
     const mutation = await workspace.edit(
       {
         message: prompt,
@@ -62,6 +62,9 @@ export class ChatService {
           signal,
         }),
     );
+    const build = mutation.checkpoint
+      ? this.artifacts.scheduleBuild(artifactId, mutation.checkpoint)
+      : undefined;
     let artifact = await this.artifacts.get(artifactId);
     let runtimeWarning = "";
     if (
@@ -86,6 +89,7 @@ export class ChatService {
       checkpoint: mutation.checkpoint,
       checkpoints: mutation.checkpoints,
       checkpointState: mutation.state,
+      build,
     };
   }
 }

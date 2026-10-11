@@ -38,6 +38,29 @@ test(
       locatorMode: "runtime-hint",
     };
     const chatRequests = [];
+    const fileRequests = [];
+    const checkpoints = [1, 2].map((version) => ({
+      version,
+      tag: `checkpoint/v${version}`,
+      commitSha: String(version).repeat(40),
+      message: `测试版本 ${version}`,
+      createdAt: "2026-01-01T00:00:00Z",
+    }));
+    const build = (version, status = "ready") => ({
+      artifactId: artifact.id,
+      version,
+      commitSha: checkpoints[version - 1].commitSha,
+      status,
+      previewUrl: `/published/${artifact.id}/${checkpoints[version - 1].commitSha}/`,
+    });
+    const checkpointState = (version, mode = "latest") => ({
+      mode,
+      activeVersion: version,
+      workspaceVersion: chatRequests.length ? 2 : 1,
+      latestVersion: chatRequests.length ? 2 : 1,
+      nextVersion: chatRequests.length ? 3 : 2,
+      revision: "fixture:1",
+    });
     const profile = await mkdtemp(join(tmpdir(), "artifact-preview-test-"));
     let server, child, socket;
     try {
@@ -55,12 +78,22 @@ test(
               current.middlewares.use((request, response, next) => {
                 const pathname = new URL(request.url, "http://fixture")
                   .pathname;
+                if (pathname === build(1).previewUrl) {
+                  response.setHeader(
+                    "content-type",
+                    "text/html; charset=utf-8",
+                  );
+                  response.end("<!doctype html><h1>版本 1 快照</h1>");
+                  return;
+                }
                 if (pathname === artifact.previewUrl) {
                   response.setHeader(
                     "content-type",
                     "text/html; charset=utf-8",
                   );
-                  response.end('<!doctype html><h1 style="margin:24px;padding:16px;display:flex;gap:12px"><span>预览</span><span>已加载</span></h1>');
+                  response.end(
+                    '<!doctype html><h1 style="margin:24px;padding:16px;display:flex;gap:12px"><span>预览</span><span>已加载</span></h1>',
+                  );
                   return;
                 }
                 if (!pathname.startsWith("/api/")) return next();
@@ -79,6 +112,9 @@ test(
                       JSON.stringify({
                         reply: "测试 Agent 回复",
                         sessionId: "fixture-session",
+                        checkpoints: [checkpoints[1], checkpoints[0]],
+                        checkpointState: checkpointState(2),
+                        build: build(2, "queued"),
                       }),
                     );
                   });
@@ -93,23 +129,31 @@ test(
                   pathname === `/api/artifacts/${artifact.id}/checkpoints`
                 )
                   payload = {
-                    checkpoints: [
-                      {
-                        version: 1,
-                        tag: "checkpoint/v1",
-                        commitSha: "fixture-commit",
-                        message: "测试版本",
-                        createdAt: "2026-01-01T00:00:00Z",
-                      },
-                    ],
-                    state: {
-                      mode: "latest",
-                      activeVersion: 1,
-                      workspaceVersion: 1,
-                      latestVersion: 1,
-                      nextVersion: 2,
-                      revision: "fixture:1",
-                    },
+                    checkpoints: [{ ...checkpoints[0], build: build(1) }],
+                    state: checkpointState(1),
+                  };
+                else if (pathname === `/api/artifacts/${artifact.id}/builds`)
+                  payload = { builds: [build(1), build(2)] };
+                else if (pathname === `/api/artifacts/${artifact.id}/share`)
+                  payload = { url: build(2).previewUrl, build: build(2) };
+                else if (
+                  pathname ===
+                  `/api/artifacts/${artifact.id}/checkpoints/1/preview`
+                )
+                  payload = {
+                    checkpoints: [checkpoints[1], checkpoints[0]],
+                    state: checkpointState(1, "historical-preview"),
+                    artifact: { ...artifact, previewUrl: build(1).previewUrl },
+                    build: build(1),
+                  };
+                else if (
+                  pathname ===
+                  `/api/artifacts/${artifact.id}/checkpoints/resume`
+                )
+                  payload = {
+                    checkpoints: [checkpoints[1], checkpoints[0]],
+                    state: checkpointState(2),
+                    artifact,
                   };
                 else if (pathname === "/api/sessions")
                   payload = { sessions: [] };
@@ -122,13 +166,21 @@ test(
                     defaultFile: "index.html",
                     truncated: false,
                   };
-                else if (pathname === "/api/sandbox/file")
+                else if (pathname === "/api/sandbox/file") {
+                  fileRequests.push(
+                    new URL(request.url, "http://fixture").searchParams.get(
+                      "version",
+                    ),
+                  );
                   payload = {
                     path: "index.html",
-                    content: "<h1>代码浏览测试</h1>",
+                    content:
+                      fileRequests.at(-1) === "1"
+                        ? "<h1>版本 1 源码</h1>"
+                        : "<h1>代码浏览测试</h1>",
                     size: 27,
                   };
-                else {
+                } else {
                   response.statusCode = 404;
                   payload = { error: `未定义测试接口：${pathname}` };
                 }
@@ -242,7 +294,10 @@ test(
       await command("Network.enable");
       await command("Page.enable");
       await command("Emulation.setDeviceMetricsOverride", {
-        width: 1440, height: 900, deviceScaleFactor: 1, mobile: false,
+        width: 1440,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false,
       });
       await command("Page.navigate", { url: baseUrl });
       await waitForPreview(1);
@@ -276,14 +331,28 @@ test(
         if (!directory) return;
         await delay(300);
         await mkdir(directory, { recursive: true });
-        const { data } = await command("Page.captureScreenshot", { format: "png" });
-        await writeFile(join(directory, `${name}.png`), Buffer.from(data, "base64"));
+        const { data } = await command("Page.captureScreenshot", {
+          format: "png",
+        });
+        await writeFile(
+          join(directory, `${name}.png`),
+          Buffer.from(data, "base64"),
+        );
       };
       await screenshot("desktop-empty");
 
-      await evaluate("document.querySelector('.prompt-suggestions button').click()");
-      await waitFor("document.querySelector('.composer textarea').value === '优化页面布局'");
-      assert.equal(await evaluate("document.activeElement === document.querySelector('.composer textarea')"), true);
+      await evaluate(
+        "document.querySelector('.prompt-suggestions button').click()",
+      );
+      await waitFor(
+        "document.querySelector('.composer textarea').value === '优化页面布局'",
+      );
+      assert.equal(
+        await evaluate(
+          "document.activeElement === document.querySelector('.composer textarea')",
+        ),
+        true,
+      );
       await evaluate(`(() => {
         const input = document.querySelector('.composer textarea');
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, '');
@@ -293,11 +362,17 @@ test(
       await evaluate("document.querySelector('.project-switcher').click()");
       await waitFor("!!document.querySelector('.artifact-menu')");
       await evaluate("document.querySelector('.project-switcher').focus()");
-      await command("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape" });
+      await command("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        key: "Escape",
+        code: "Escape",
+      });
       await waitFor("!document.querySelector('.artifact-menu')");
       await evaluate("document.querySelector('.project-switcher').click()");
       await waitFor("!!document.querySelector('.artifact-menu')");
-      await evaluate("document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))");
+      await evaluate(
+        "document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))",
+      );
       await waitFor("!document.querySelector('.artifact-menu')");
 
       await evaluate("document.querySelector('.checkpoint-button').click()");
@@ -341,16 +416,37 @@ test(
       assert.equal(selectionLayout.margin, 4, "应绘制四侧 margin");
       assert.equal(selectionLayout.padding, 4, "应绘制四侧 padding");
       assert.equal(selectionLayout.gap, 1, "应绘制子元素之间的 gap");
-      assert.ok(selectionLayout.left >= 0 && selectionLayout.right <= selectionLayout.width);
-      assert.ok(selectionLayout.top >= 0 && selectionLayout.bottom <= selectionLayout.height);
-      assert.ok(selectionLayout.editorScrollWidth <= selectionLayout.editorWidth);
-      await evaluate("document.querySelectorAll('.element-editor-tabs button')[1].click()");
-      await waitFor("!!document.querySelector('.element-editor-comment textarea')");
+      assert.ok(
+        selectionLayout.left >= 0 &&
+          selectionLayout.right <= selectionLayout.width,
+      );
+      assert.ok(
+        selectionLayout.top >= 0 &&
+          selectionLayout.bottom <= selectionLayout.height,
+      );
+      assert.ok(
+        selectionLayout.editorScrollWidth <= selectionLayout.editorWidth,
+      );
+      await evaluate(
+        "document.querySelectorAll('.element-editor-tabs button')[1].click()",
+      );
+      await waitFor(
+        "!!document.querySelector('.element-editor-comment textarea')",
+      );
       await screenshot("element-ai-comment");
-      await evaluate("document.querySelectorAll('.element-editor-tabs button')[0].click()");
+      await evaluate(
+        "document.querySelectorAll('.element-editor-tabs button')[0].click()",
+      );
       await waitFor("!!document.querySelector('.element-editor-fields')");
-      await evaluate("document.querySelector('.element-editor-group:not([open]) summary').click()");
-      assert.ok(await evaluate("document.querySelectorAll('.element-editor-group[open]').length > 0"), "属性分组可以展开");
+      await evaluate(
+        "document.querySelector('.element-editor-group:not([open]) summary').click()",
+      );
+      assert.ok(
+        await evaluate(
+          "document.querySelectorAll('.element-editor-group[open]').length > 0",
+        ),
+        "属性分组可以展开",
+      );
       await evaluate(
         "document.querySelector('.element-editor-actions .is-primary').click()",
       );
@@ -378,16 +474,26 @@ test(
 
       await evaluate(selectHeading);
       await waitFor("!!document.querySelector('.element-editor-popover')");
-      await evaluate("document.querySelector('.element-editor-format-row button[aria-label=粗体]').click()");
-      await waitFor("document.querySelector('iframe.sandbox-preview').contentDocument.querySelector('h1').style.fontWeight === '400'");
-      await evaluate("document.querySelectorAll('.element-editor-tabs button')[1].click()");
-      await waitFor("!!document.querySelector('.element-editor-comment textarea')");
+      await evaluate(
+        "document.querySelector('.element-editor-format-row button[aria-label=粗体]').click()",
+      );
+      await waitFor(
+        "document.querySelector('iframe.sandbox-preview').contentDocument.querySelector('h1').style.fontWeight === '400'",
+      );
+      await evaluate(
+        "document.querySelectorAll('.element-editor-tabs button')[1].click()",
+      );
+      await waitFor(
+        "!!document.querySelector('.element-editor-comment textarea')",
+      );
       await evaluate(`(() => {
         const input = document.querySelector('.element-editor-comment textarea');
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, '降低标题字重，保留当前布局');
         input.dispatchEvent(new Event('input', { bubbles: true }));
       })()`);
-      await waitFor("document.querySelector('.element-editor-comment textarea').value === '降低标题字重，保留当前布局'");
+      await waitFor(
+        "document.querySelector('.element-editor-comment textarea').value === '降低标题字重，保留当前布局'",
+      );
       await evaluate(
         "document.querySelector('.element-editor-actions .is-primary').click()",
       );
@@ -430,64 +536,200 @@ test(
         1,
       );
       await screenshot("desktop-code");
-    await evaluate(
-      "document.querySelectorAll('.view-tabs button')[0].click()",
-    );
-    await waitForPreview(4);
+      await evaluate(
+        "document.querySelectorAll('.view-tabs button')[0].click()",
+      );
+      await waitForPreview(4);
 
-    await evaluate("document.querySelector('.project-switcher').click()");
-    await waitFor("!!document.querySelector('.artifact-create-button')");
-    await evaluate("document.querySelector('.artifact-create-button').click()");
-    await waitFor("!!document.querySelector('.artifact-dialog')");
-    assert.equal(await evaluate("document.querySelector('.artifact-field input').value"), "");
-    assert.equal(await evaluate("document.querySelector('.technology-options input:checked').value"), "html");
-    await screenshot("create-dialog");
-    // 原生 Tab 按键验证焦点约束；不能只用合成事件模拟浏览器的焦点移动。
-    await evaluate("document.querySelector('.artifact-dialog-heading button').focus()");
-    await command("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", modifiers: 8 });
-    assert.equal(await evaluate("document.activeElement === document.querySelector('.artifact-dialog-actions button[type=button]')"), true);
-    await command("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab" });
-    assert.equal(await evaluate("document.activeElement === document.querySelector('.artifact-dialog-heading button')"), true);
-    await command("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape" });
-    await waitFor("!document.querySelector('.artifact-dialog')");
-    assert.equal(await evaluate("document.activeElement === document.querySelector('.project-switcher')"), true);
-    await evaluate("document.querySelector('.create-artifact-button').click()");
-    await waitFor("!!document.querySelector('.artifact-dialog')");
-    await evaluate("document.querySelector('.artifact-dialog-heading button').click()");
-    await waitFor("!document.querySelector('.artifact-dialog')");
+      await waitFor(
+        "document.querySelector('.header-actions [role=status]')?.textContent.includes('V2 已构建')",
+      );
+      await evaluate(
+        "Array.from(document.querySelectorAll('.header-actions button')).find(button => button.textContent.includes('分享')).click()",
+      );
+      await waitFor("!!document.querySelector('.share-result input')");
+      assert.equal(
+        await evaluate("document.querySelector('.share-result input').value"),
+        baseUrl + build(2).previewUrl,
+      );
+      await screenshot("share-version");
+      await evaluate("document.querySelector('.checkpoint-button').click()");
+      await waitFor("!!document.querySelector('.checkpoint-menu')");
+      await evaluate(
+        "Array.from(document.querySelectorAll('.checkpoint-menu button')).find(button => button.querySelector('.checkpoint-version')?.textContent === 'V1').click()",
+      );
+      await waitFor(
+        "document.querySelector('iframe.sandbox-preview')?.contentDocument?.querySelector('h1')?.textContent === '版本 1 快照'",
+      );
+      assert.equal(
+        await evaluate("document.querySelector('.edit-mode-button').disabled"),
+        true,
+      );
+      assert.equal(
+        await evaluate(
+          "document.querySelector('.preview-live-state').textContent",
+        ),
+        "版本快照",
+      );
+      assert.equal(
+        await evaluate("!!document.querySelector('.share-result')"),
+        false,
+      );
+      await evaluate(
+        "document.querySelectorAll('.view-tabs button')[1].click()",
+      );
+      await waitFor(
+        "document.querySelector('.code-content code')?.textContent === '<h1>版本 1 源码</h1>'",
+      );
+      assert.equal(fileRequests.at(-1), "1");
+      await evaluate(
+        "document.querySelectorAll('.view-tabs button')[0].click()",
+      );
+      await waitFor("!!document.querySelector('.checkpoint-notice button')");
+      await screenshot("historical-version");
+      await evaluate(
+        "Array.from(document.querySelectorAll('.checkpoint-notice button')).find(button => button.textContent.includes('返回')).click()",
+      );
+      await waitForPreview(5);
+      assert.equal(
+        await evaluate(
+          "document.querySelector('.preview-live-state').textContent",
+        ),
+        "实时预览",
+      );
 
-    for (const width of [1024, 390, 320]) {
-      await command("Emulation.setDeviceMetricsOverride", {
-        width, height: 844, deviceScaleFactor: 1, mobile: width < 760,
+      await evaluate("document.querySelector('.project-switcher').click()");
+      await waitFor("!!document.querySelector('.artifact-create-button')");
+      await evaluate(
+        "document.querySelector('.artifact-create-button').click()",
+      );
+      await waitFor("!!document.querySelector('.artifact-dialog')");
+      assert.equal(
+        await evaluate("document.querySelector('.artifact-field input').value"),
+        "",
+      );
+      assert.equal(
+        await evaluate(
+          "document.querySelector('.technology-options input:checked').value",
+        ),
+        "html",
+      );
+      await screenshot("create-dialog");
+      // 原生 Tab 按键验证焦点约束；不能只用合成事件模拟浏览器的焦点移动。
+      await evaluate(
+        "document.querySelector('.artifact-dialog-heading button').focus()",
+      );
+      await command("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        key: "Tab",
+        code: "Tab",
+        modifiers: 8,
       });
-      await delay(300);
-      const layout = await evaluate(`(() => {
+      assert.equal(
+        await evaluate(
+          "document.activeElement === document.querySelector('.artifact-dialog-actions button[type=button]')",
+        ),
+        true,
+      );
+      await command("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        key: "Tab",
+        code: "Tab",
+      });
+      assert.equal(
+        await evaluate(
+          "document.activeElement === document.querySelector('.artifact-dialog-heading button')",
+        ),
+        true,
+      );
+      await command("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        key: "Escape",
+        code: "Escape",
+      });
+      await waitFor("!document.querySelector('.artifact-dialog')");
+      assert.equal(
+        await evaluate(
+          "document.activeElement === document.querySelector('.project-switcher')",
+        ),
+        true,
+      );
+      await evaluate(
+        "document.querySelector('.create-artifact-button').click()",
+      );
+      await waitFor("!!document.querySelector('.artifact-dialog')");
+      await evaluate(
+        "document.querySelector('.artifact-dialog-heading button').click()",
+      );
+      await waitFor("!document.querySelector('.artifact-dialog')");
+
+      for (const width of [1024, 390, 320]) {
+        await command("Emulation.setDeviceMetricsOverride", {
+          width,
+          height: 844,
+          deviceScaleFactor: 1,
+          mobile: width < 760,
+        });
+        await delay(300);
+        const layout = await evaluate(`(() => {
         const preview = document.querySelector('.preview-panel').getBoundingClientRect();
         const toolbar = document.querySelector('.preview-toolbar');
         return { width: innerWidth, documentWidth: document.documentElement.scrollWidth,
           previewRight: preview.right, previewHeight: preview.height,
           toolbarWidth: toolbar.clientWidth, toolbarScrollWidth: toolbar.scrollWidth };
       })()`);
-      assert.ok(layout.documentWidth <= layout.width, `页面横向溢出：${JSON.stringify(layout)}`);
-      assert.ok(layout.previewRight <= layout.width && layout.previewHeight > 0, "预览区域应可见");
-      assert.ok(layout.toolbarScrollWidth <= layout.toolbarWidth, `预览工具栏溢出：${JSON.stringify(layout)}`);
-      assert.equal(await evaluate("getComputedStyle(document.querySelector('.composer-actions')).display"), "flex");
-      if (width === 1024) {
-        await evaluate("document.querySelector('.panel-resizer').focus()");
-        await command("Input.dispatchKeyEvent", { type: "keyDown", key: "End", code: "End" });
-        await delay(100);
-        assert.ok(await evaluate("document.querySelector('.preview-panel').getBoundingClientRect().width >= 320"), "键盘调整宽度后预览应保留可用空间");
-        await command("Input.dispatchKeyEvent", { type: "keyDown", key: "Home", code: "Home" });
-        await delay(100);
-        assert.equal(await evaluate("document.querySelector('.chat-panel').getBoundingClientRect().width"), 320);
-      }
-      await screenshot(`viewport-${width}`);
-      if (width === 390) {
-        await evaluate("document.querySelector('.edit-mode-button').click()");
-        await evaluate(selectHeading);
-        await waitFor("!!document.querySelector('.element-editor-popover')");
-        await screenshot("mobile-element-editor");
-        const editorBounds = await evaluate(`(() => {
+        assert.ok(
+          layout.documentWidth <= layout.width,
+          `页面横向溢出：${JSON.stringify(layout)}`,
+        );
+        assert.ok(
+          layout.previewRight <= layout.width && layout.previewHeight > 0,
+          "预览区域应可见",
+        );
+        assert.ok(
+          layout.toolbarScrollWidth <= layout.toolbarWidth,
+          `预览工具栏溢出：${JSON.stringify(layout)}`,
+        );
+        assert.equal(
+          await evaluate(
+            "getComputedStyle(document.querySelector('.composer-actions')).display",
+          ),
+          "flex",
+        );
+        if (width === 1024) {
+          await evaluate("document.querySelector('.panel-resizer').focus()");
+          await command("Input.dispatchKeyEvent", {
+            type: "keyDown",
+            key: "End",
+            code: "End",
+          });
+          await delay(100);
+          assert.ok(
+            await evaluate(
+              "document.querySelector('.preview-panel').getBoundingClientRect().width >= 320",
+            ),
+            "键盘调整宽度后预览应保留可用空间",
+          );
+          await command("Input.dispatchKeyEvent", {
+            type: "keyDown",
+            key: "Home",
+            code: "Home",
+          });
+          await delay(100);
+          assert.equal(
+            await evaluate(
+              "document.querySelector('.chat-panel').getBoundingClientRect().width",
+            ),
+            320,
+          );
+        }
+        await screenshot(`viewport-${width}`);
+        if (width === 390) {
+          await evaluate("document.querySelector('.edit-mode-button').click()");
+          await evaluate(selectHeading);
+          await waitFor("!!document.querySelector('.element-editor-popover')");
+          await screenshot("mobile-element-editor");
+          const editorBounds = await evaluate(`(() => {
           const frame = document.querySelector('iframe.sandbox-preview').getBoundingClientRect();
           const editor = document.querySelector('.element-editor-popover').getBoundingClientRect();
           const footer = document.querySelector('.element-editor-actions').getBoundingClientRect();
@@ -495,22 +737,39 @@ test(
             frameTop: frame.top, frameBottom: frame.bottom, frameLeft: frame.left,
             frameRight: frame.right, footerBottom: footer.bottom };
         })()`);
-        assert.ok(editorBounds.top >= editorBounds.frameTop && editorBounds.bottom <= editorBounds.frameBottom);
-        assert.ok(editorBounds.left >= editorBounds.frameLeft && editorBounds.right <= editorBounds.frameRight);
-        assert.ok(editorBounds.footerBottom <= editorBounds.bottom);
-        await evaluate("document.querySelector('.element-editor-heading button').click()");
-        await waitFor("!document.querySelector('.element-editor-popover')");
-        await evaluate("document.querySelector('.edit-mode-button').click()");
+          assert.ok(
+            editorBounds.top >= editorBounds.frameTop &&
+              editorBounds.bottom <= editorBounds.frameBottom,
+          );
+          assert.ok(
+            editorBounds.left >= editorBounds.frameLeft &&
+              editorBounds.right <= editorBounds.frameRight,
+          );
+          assert.ok(editorBounds.footerBottom <= editorBounds.bottom);
+          await evaluate(
+            "document.querySelector('.element-editor-heading button').click()",
+          );
+          await waitFor("!document.querySelector('.element-editor-popover')");
+          await evaluate("document.querySelector('.edit-mode-button').click()");
+        }
       }
-    }
-    await evaluate("document.querySelector('.mobile-only').click()");
-    await waitFor("document.querySelector('.history-rail').classList.contains('is-open')");
-    await evaluate("document.querySelector('.mobile-scrim').click()");
-    await waitFor("!document.querySelector('.history-rail').classList.contains('is-open')");
-    await command("Emulation.setEmulatedMedia", {
-      features: [{ name: "prefers-reduced-motion", value: "reduce" }],
-    });
-    assert.equal(await evaluate("getComputedStyle(document.querySelector('.view-tabs'), '::before').transitionDuration"), "1e-05s");
+      await evaluate("document.querySelector('.mobile-only').click()");
+      await waitFor(
+        "document.querySelector('.history-rail').classList.contains('is-open')",
+      );
+      await evaluate("document.querySelector('.mobile-scrim').click()");
+      await waitFor(
+        "!document.querySelector('.history-rail').classList.contains('is-open')",
+      );
+      await command("Emulation.setEmulatedMedia", {
+        features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+      });
+      assert.equal(
+        await evaluate(
+          "getComputedStyle(document.querySelector('.view-tabs'), '::before').transitionDuration",
+        ),
+        "1e-05s",
+      );
     } finally {
       socket?.close();
       if (child && child.exitCode === null) {

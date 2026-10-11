@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { SandboxClient } from "@agent-infra/sandbox";
 import { requireSuccess, shellCommand } from "@artifact-editor/sdk/server";
 import { SandboxCommandService } from "../dist/infrastructure/sandbox/services/sandbox-command.service.js";
@@ -8,6 +11,7 @@ import { ArtifactFilesystemService } from "../dist/modules/artifacts/services/ar
 import { ArtifactTemplateService } from "../dist/modules/artifacts/services/artifact-template.service.js";
 import { DependenciesService } from "../dist/modules/artifacts/services/dependencies.service.js";
 import { WorkspaceService } from "../dist/modules/artifacts/services/workspace.service.js";
+import { ArtifactsService } from "../dist/modules/artifacts/services/artifacts.service.js";
 import { ServerConfigService } from "../dist/config/server-config.service.js";
 import { createApplication } from "../dist/main.js";
 
@@ -181,13 +185,18 @@ test(
     if (previousUrl === undefined) delete process.env.ARTIFACT_SANDBOX_URL;
     else process.env.ARTIFACT_SANDBOX_URL = previousUrl;
     const config = app.get(ServerConfigService);
+    const releaseRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), "artifact-aio-releases-"),
+    );
     Object.assign(config, {
       workspaceRoot: `${directory}/nas`,
       dependencyRoot: `${directory}/ssd`,
       packageManager: "pnpm",
+      releaseRoot,
     });
     context.after(async () => {
       await app.close();
+      await fs.rm(releaseRoot, { recursive: true, force: true });
       requireSuccess(
         await remote.commands.run(shellCommand(["rm", "-rf", "--", directory])),
       );
@@ -258,12 +267,8 @@ test(
           reject(new Error("HMR 连接失败"));
         });
       });
-      requireSuccess(
-        await app
-          .get(WorkspaceService)
-          .forArtifact(artifact.id)
-          .build({ timeoutMs: 120_000 }),
-      );
+      const release = await app.get(ArtifactsService).build(artifact.id, 1);
+      assert.equal((await fetch(base + release.previewUrl)).status, 200);
       const versions = await json(`/api/artifacts/${artifact.id}/checkpoints`);
       assert.equal(versions.state.dirty, false);
       assert.equal(versions.checkpoints.length, 1);

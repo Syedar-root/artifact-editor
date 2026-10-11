@@ -1,0 +1,16 @@
+name: artifact-editor-nas
+services:
+  sandbox:
+    image: artifact-editor-sandbox:local
+    build:
+      context: ./apps/server
+      dockerfile: Dockerfile.sandbox
+    ports:
+      - "127.0.0.1:18081:8080"
+    security_opt:
+      - seccomp=unconfined
+    volumes:
+      - ./mock-nas/artifacts:/workspace
+    tmpfs:
+      - /opt/artifact-dependencies:mode=1777,size=1073741824,exec
+      - /tmp/artifact-builds:mode=1777,size=1073741824,exec

@@ -15,6 +15,8 @@ export class ServerConfigService {
   readonly dependencyRoot: string;
   readonly packageManager: "npm" | "pnpm";
   readonly sessionRoot: string;
+  readonly releaseRoot: string;
+  readonly buildRoot: string;
 
   constructor() {
     config({
@@ -54,6 +56,23 @@ export class ServerConfigService {
       this.repositoryRoot,
       process.env.ARTIFACT_SESSION_ROOT || ".artifact-server/sessions",
     );
+    this.releaseRoot = path.resolve(
+      this.repositoryRoot,
+      process.env.ARTIFACT_RELEASE_ROOT || "mock-nas/releases",
+    );
+    this.buildRoot = this.sandboxPath(
+      process.env.ARTIFACT_BUILD_ROOT,
+      "/tmp/artifact-builds",
+    );
+    for (const other of [this.workspaceRoot, this.dependencyRoot]) {
+      const relative = path.posix.relative(other, this.buildRoot);
+      const inverse = path.posix.relative(this.buildRoot, other);
+      if (
+        (!relative.startsWith("../") && relative !== "..") ||
+        (!inverse.startsWith("../") && inverse !== "..")
+      )
+        throw new Error("ARTIFACT_BUILD_ROOT 必须与源码、依赖目录分离");
+    }
     const relative = path.posix.relative(
       this.workspaceRoot,
       this.dependencyRoot,

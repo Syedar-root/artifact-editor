@@ -25,10 +25,12 @@ export function useCodeBrowser({
   activeArtifactId,
   view,
   codeRefreshKey,
+  version,
 }: {
   activeArtifactId: string | null;
   view: "preview" | "code";
   codeRefreshKey: number;
+  version?: number;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -51,7 +53,7 @@ export function useCodeBrowser({
     const lifecycle = new AbortController();
     loadSandboxCode(lifecycle.signal);
     return () => lifecycle.abort();
-  }, [activeArtifactId, view, codeRefreshKey]);
+  }, [activeArtifactId, view, codeRefreshKey, version]);
 
   async function fetchSandboxFile(
     filePath: string,
@@ -65,7 +67,7 @@ export function useCodeBrowser({
 
     try {
       const response = await fetch(
-        `/api/sandbox/file?artifactId=${encodeURIComponent(activeArtifactId)}&path=${encodeURIComponent(filePath)}`,
+        `/api/sandbox/file?artifactId=${encodeURIComponent(activeArtifactId)}&path=${encodeURIComponent(filePath)}${version ? `&version=${version}` : ""}`,
         { signal },
       );
       const payload = await response.json();
@@ -86,7 +88,7 @@ export function useCodeBrowser({
     setCodeError("");
     try {
       const response = await fetch(
-        `/api/sandbox/files?artifactId=${encodeURIComponent(activeArtifactId)}`,
+        `/api/sandbox/files?artifactId=${encodeURIComponent(activeArtifactId)}${version ? `&version=${version}` : ""}`,
         { signal },
       );
       const payload = await response.json();

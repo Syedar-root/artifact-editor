@@ -165,6 +165,7 @@ test("NestJS 服务保留健康检查、输入校验和统一 JSON 错误协议"
   };
   repository.get = async () => artifact;
   workspaces.forArtifact = () => ({
+    versions: { list: async () => [] },
     prepareDependencies: async () => {
       operations.push("dependencies");
     },

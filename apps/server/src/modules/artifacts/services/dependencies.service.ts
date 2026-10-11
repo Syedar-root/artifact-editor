@@ -21,6 +21,7 @@ export type DependencyOptions = {
   packages?: string[];
   signal?: AbortSignal;
   persistLock?: boolean;
+  mode?: "update" | "restore";
 };
 type PackageManifest = {
   packageManager?: string;
@@ -45,6 +46,7 @@ type Installation = {
   importLockText: string;
   npmrc: string;
   overlay: boolean;
+  frozen: boolean;
 };
 
 /** 决策在 Server 中执行；远端只读写文件并运行包管理器和标准文件命令。 */
@@ -76,16 +78,14 @@ export class DependenciesService {
     if (cachedKey && !/^[0-9a-f]{64}$/u.test(cachedKey))
       throw new Error("依赖缓存索引无效");
     let target = path.posix.join(plan.project, cachedKey || requestKey);
-    const cached =
-      (await this.exists(path.posix.join(target, ".complete"), execution)) &&
-      (await this.exists(path.posix.join(target, "node_modules"), execution));
+    const cached = await this.usable(plan, target, execution);
     if (!cached) {
       target = await this.install(plan, execution);
       const temporary = `${index}-${randomUUID()}`;
       await this.write(temporary, path.posix.basename(target), execution);
       await this.command(["mv", "-fT", "--", temporary, index], execution);
     }
-    if (options.persistLock !== false && !plan.overlay) {
+    if (options.persistLock !== false && !plan.overlay && !plan.frozen) {
       const lock = await this.text(
         path.posix.join(target, plan.lockName),
         execution,
@@ -181,6 +181,12 @@ export class DependenciesService {
         overlay = true;
       }
     }
+    const frozen = options.mode === "restore";
+    if (frozen && overlay) throw new Error("恢复依赖时不能新增包");
+    if (frozen && (selected === "pnpm" ? pnpmLock : npmLock) === null)
+      throw new Error(
+        "此版本缺少 lockfile，无法严格恢复依赖；请先安装并保存依赖",
+      );
     return {
       root: rootPath,
       store,
@@ -210,6 +216,7 @@ export class DependenciesService {
       npmrc:
         (await this.text(path.posix.join(rootPath, ".npmrc"), execution)) ?? "",
       overlay,
+      frozen,
     };
   }
 
@@ -256,7 +263,9 @@ export class DependenciesService {
         await this.command(
           [
             "npm",
-            this.npmLockMatches(plan) && !plan.overlay ? "ci" : "install",
+            plan.frozen || (this.npmLockMatches(plan) && !plan.overlay)
+              ? "ci"
+              : "install",
             "--package-lock=true",
             "--include=dev",
             "--no-audit",
@@ -281,10 +290,21 @@ export class DependenciesService {
       );
       await this.write(path.posix.join(stage, ".complete"), "1", execution);
       if (await this.exists(target, execution)) {
-        if (
-          !(await this.exists(path.posix.join(target, ".complete"), execution))
-        )
-          throw new Error(`依赖缓存不完整，请清理后重试：${target}`);
+        if (!(await this.usable(plan, target, execution))) {
+          const broken = `${target}-broken-${randomUUID()}`;
+          await this.command(["mv", "-T", "--", target, broken], execution);
+          try {
+            await this.command(["mv", "-T", "--", stage, target], execution);
+          } catch (error) {
+            await this.command(["mv", "-T", "--", broken, target], {
+              timeoutMs: 30_000,
+            });
+            throw error;
+          }
+          await this.command(["rm", "-rf", "--", broken], {
+            timeoutMs: 30_000,
+          });
+        }
       } else await this.command(["mv", "-T", "--", stage, target], execution);
       return target;
     } finally {
@@ -324,7 +344,7 @@ export class DependenciesService {
       [
         "pnpm",
         "install",
-        "--no-frozen-lockfile",
+        plan.frozen ? "--frozen-lockfile" : "--no-frozen-lockfile",
         "--prod=false",
         "--reporter=append-only",
         "--config.node-linker=hoisted",
@@ -362,6 +382,38 @@ export class DependenciesService {
     } finally {
       await this.command(["rm", "-f", "--", temporary], { timeoutMs: 30_000 });
     }
+  }
+
+  private async usable(
+    plan: Installation,
+    directory: string,
+    options: BashOptions,
+  ) {
+    const checks = [
+      shellCommand(["test", "-f", `${directory}/.complete`]),
+      shellCommand(["test", "-d", `${directory}/node_modules`]),
+      ...Object.keys({
+        ...plan.manifest.dependencies,
+        ...plan.manifest.devDependencies,
+      })
+        .filter((name) => !(name in (plan.manifest.optionalDependencies ?? {})))
+        .map((name) =>
+          shellCommand(["test", "-d", `${directory}/node_modules/${name}`]),
+        ),
+      ...(plan.manifest.dependencies?.vite ||
+      plan.manifest.devDependencies?.vite
+        ? [shellCommand(["test", "-x", `${directory}/node_modules/.bin/vite`])]
+        : []),
+    ];
+    const result = await this.commands.run(checks.join(" && "), options);
+    if (result.exitCode > 1 || result.truncated) requireSuccess(result);
+    if (result.exitCode !== 0) return false;
+    // update 模式可能记录旧 lockfile 到新安装结果的索引；严格恢复不能复用这种映射。
+    return (
+      !plan.frozen ||
+      (await this.text(`${directory}/${plan.lockName}`, options)) ===
+        plan.lockText
+    );
   }
 
   private validateManifest(manifest: PackageManifest) {

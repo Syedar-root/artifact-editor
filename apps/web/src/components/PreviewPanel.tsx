@@ -50,6 +50,8 @@ type Props = Pick<
   | "openArtifactDialog"
   | "artifactsLoading"
   | "creatingArtifact"
+  | "shareUrl"
+  | "shareError"
 > &
   ComponentProps<typeof CodeBrowser> &
   ComponentProps<typeof CheckpointSwitcher>;
@@ -87,12 +89,19 @@ export function PreviewPanel(props: Props) {
     openArtifactDialog,
     artifactsLoading,
     creatingArtifact,
+    shareUrl,
+    shareError,
   } = props;
 
   return (
     <section className="preview-panel" aria-label="产物预览">
       <div className="preview-toolbar">
-        <div className="view-tabs" data-view={view} role="tablist" aria-label="预览模式">
+        <div
+          className="view-tabs"
+          data-view={view}
+          role="tablist"
+          aria-label="预览模式"
+        >
           <button
             className={view === "preview" ? "is-active" : ""}
             onClick={() => setView("preview")}
@@ -131,7 +140,9 @@ export function PreviewPanel(props: Props) {
             }}
           >
             <ScanSearch size={15} />
-            <span className="edit-mode-label">{isElementPicking ? "退出编辑" : "编辑页面"}</span>
+            <span className="edit-mode-label">
+              {isElementPicking ? "退出编辑" : "编辑页面"}
+            </span>
           </button>
           <span className="toolbar-rule" />
           <button
@@ -162,6 +173,25 @@ export function PreviewPanel(props: Props) {
         </div>
       </div>
 
+      {shareUrl && (
+        <div className="share-result" role="status">
+          <span>此链接固定展示已保存版本</span>
+          <input
+            aria-label="分享链接"
+            value={shareUrl}
+            readOnly
+            onFocus={(event) => event.currentTarget.select()}
+          />
+          <a href={shareUrl} target="_blank" rel="noopener noreferrer">
+            打开分享页
+          </a>
+        </div>
+      )}
+      {shareError && (
+        <div className="checkpoint-error" role="alert">
+          {shareError}
+        </div>
+      )}
       {checkpointError && (
         <div className="checkpoint-error" role="alert">
           {checkpointError}
@@ -176,7 +206,12 @@ export function PreviewPanel(props: Props) {
                 <Globe2 size={13} />
                 <span>{activeArtifact?.name || "预览"}</span>
               </div>
-              {activeArtifact && <span className="preview-live-state"><i />实时预览</span>}
+              {activeArtifact && (
+                <span className="preview-live-state">
+                  <i />
+                  {isHistoricalPreview ? "版本快照" : "实时预览"}
+                </span>
+              )}
             </div>
             {checkpointState?.mode === "historical-preview" && (
               <div className="checkpoint-notice is-history">
@@ -239,9 +274,17 @@ export function PreviewPanel(props: Props) {
                 <span className="empty-state-mark">
                   <Globe2 size={26} strokeWidth={1.4} />
                 </span>
-                <h2>{artifactsLoading || activeArtifact ? "正在准备预览…" : "你的创作空间"}</h2>
+                <h2>
+                  {artifactsLoading || activeArtifact
+                    ? "正在准备预览…"
+                    : "你的创作空间"}
+                </h2>
                 {!artifactsLoading && !activeArtifact && (
-                  <button className="create-artifact-button" disabled={creatingArtifact || isThinking} onClick={openArtifactDialog}>
+                  <button
+                    className="create-artifact-button"
+                    disabled={creatingArtifact || isThinking}
+                    onClick={openArtifactDialog}
+                  >
                     <Plus size={15} /> 创建产物
                   </button>
                 )}
@@ -286,7 +329,9 @@ export function PreviewPanel(props: Props) {
                             )}
                           </span>
                           <span>
-                            <code title={element.hint}>{formatElementSelector(element)}</code>
+                            <code title={element.hint}>
+                              {formatElementSelector(element)}
+                            </code>
                             {element.comment && (
                               <small>{element.comment}</small>
                             )}

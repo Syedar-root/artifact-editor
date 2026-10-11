@@ -6,3 +6,5 @@ dist
 .sites-runtime
 *.log
 .artifact-server/
+mock-nas/artifacts/
+mock-nas/releases/

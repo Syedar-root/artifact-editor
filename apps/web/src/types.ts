@@ -44,7 +44,17 @@ export interface ArtifactSummary {
   locatorMode: "runtime-hint" | "code-inspector";
 }
 
+export interface ArtifactBuild {
+  artifactId: string;
+  version: number;
+  commitSha: string;
+  status: "queued" | "building" | "ready" | "failed";
+  previewUrl?: string;
+  error?: string;
+}
+
 export interface CheckpointSummary {
+  build?: ArtifactBuild;
   version: number;
   tag: string;
   commitSha: string;
@@ -53,7 +63,9 @@ export interface CheckpointSummary {
 }
 
 export type CheckpointMode =
-  "latest" | "historical-preview" | "editing-history";
+  | "latest"
+  | "historical-preview"
+  | "editing-history";
 
 export interface CheckpointState {
   mode: CheckpointMode;
@@ -65,6 +77,7 @@ export interface CheckpointState {
 }
 
 export interface CheckpointPayload {
+  build?: ArtifactBuild;
   checkpoints: CheckpointSummary[];
   state: CheckpointState;
   artifact?: ArtifactSummary;

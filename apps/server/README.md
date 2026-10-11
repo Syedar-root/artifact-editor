@@ -11,8 +11,8 @@ src/
   modules/
     artifacts/
       artifacts.module.ts
-      controllers/                产物、文件、版本接口与进度流
-      services/                   产物业务、依赖缓存、模板、工作区与预览
+      controllers/                产物、文件、版本、分享、静态构建访问与进度流
+      services/                   产物业务、依赖缓存、模板、工作区、预览与后台构建
       repositories/               产物元数据与存储访问
       models/                     产物类型、ID 校验、工作区事务与 Git 版本类
     agent/
@@ -36,6 +36,10 @@ test/                             TypeScript 回归与真实沙箱集成测试
 
 `ChatService` 在编辑事务中调用 `DshRuntimeService`。DSH 继续直接组合官方核心包，接受模型、插件和工具，不另写模型循环。`SessionViewService` 转换会话展示数据，`SessionsService` 处理会话查询。请求参数、进度流等 HTTP 辅助逻辑由 Controller 的私有方法处理。
 
+`WorkspaceService.ensureReady()` 是预览及 Agent 的依赖恢复入口；`DependenciesService` 区分编辑安装与严格恢复，恢复不修改源码清单及 lockfile。`BuildService.schedule()` 在保存 checkpoint 后异步构建固定提交，`ensure()` 为历史预览和分享复用结果或等待重试。源码快照和依赖都在沙箱临时快速磁盘中处理，仅完整的构建文件及状态落到 Server 的 NAS 路径。`PublishedController` 直接读取持久化资源，不依赖沙箱。
+
+历史预览不切换工作区 Git HEAD；代码接口通过 `version` 参数读取 Git 快照。基于历史版本编辑仍由工作区的 Git 分支流程负责。构建状态通过 `/api/artifacts/:artifactId/builds` 查询，`POST /api/artifacts/:artifactId/share` 接受可选的 `version` 并返回固定分享地址。
+
 `AgentToolsService.forWorkspace()` 使用官方 `defineTool` 声明 `read/write/edit/list/search/bash`、`inspect_artifact`、`install_dependencies` 和 `build`。工具绑定该次编辑提供的工作区，不重复获取编辑锁；产物检查由 Server 绑定当前产物 ID。创建产物和启动预览继续通过 HTTP 业务接口调用。
 
 源码、测试和构建辅助文件均使用 TypeScript。源码开启严格类型检查，只编译 `src/**/*.ts`。ESM 导入中的 `.js` 后缀对应编译后的文件，开发和测试通过 `tsx` 解析对应的 `.ts` 源码。Server 不再包含注入容器执行的 Node 业务程序。模板生成的 Vite 配置和前端源码属于产物文件，由官方文件接口写入沙箱。npm/pnpm 的安装、缓存和链接机制见[根目录说明](../../README.md)。
@@ -49,3 +53,5 @@ npm run test --workspace @artifact-editor/server
 配置 `ARTIFACT_SANDBOX_URL`（默认 `http://127.0.0.1:18080`），可选的 `ARTIFACT_SANDBOX_TOKEN` 用于 JWT 鉴权。NAS 源码和 SSD 依赖挂载目录必须允许 AIO 执行用户读写。
 
 设置 `ARTIFACT_SANDBOX_TEST_URL` 后可运行 `npm run test:integration --workspace @artifact-editor/server`。真实集成测试通过官方 SDK 使用 `/tmp/artifact-aio-*` 的独立源码和依赖目录，验证三个技术栈及 HMR；要求已安装 pnpm 且 5173 预览端口空闲。
+
+本地 NAS 模拟及失效恢复测试见 [mock-nas 说明](../../mock-nas/README.md)。`ARTIFACT_RELEASE_ROOT` 是 Server 持久化目录；`ARTIFACT_BUILD_ROOT` 是沙箱的临时构建目录，两者处于不同运行环境。

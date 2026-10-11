@@ -126,11 +126,12 @@ function previewFor(
     { get: async () => artifact } as any,
     {
       initialize: async () => {},
-      forArtifact: () => ({
+      ensureReady: async () => ({
         root: "/workspace/test",
         prepareDependencies: async () => {},
         files: { write: async () => {} },
       }),
+      forArtifact: () => ({ prepareDependencies: async () => {} }),
     } as any,
     { configurePreview: async () => {} } as any,
     { workspaceRoot: "/workspace", sandboxBaseUrl } as any,
@@ -138,9 +139,14 @@ function previewFor(
 }
 
 test("预览启动失败后关闭 SDK session，避免遗留进程", async () => {
+  let created = false;
   const { client, calls } = fixture((path) => {
-    if (path.endsWith("/sessions")) return success([]);
-    if (path.endsWith("/create")) return success({ session_id: "preview" });
+    if (path.endsWith("/sessions"))
+      return success(created ? [{ session_id: "preview" }] : []);
+    if (path.endsWith("/create")) {
+      created = true;
+      return success({ session_id: "preview" });
+    }
     if (path.endsWith("/exec")) return { success: false, message: "无法启动" };
     if (path.endsWith("/close")) return success(null);
     throw new Error(path);

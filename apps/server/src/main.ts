@@ -40,7 +40,8 @@ export async function createApplication({
         request.method === "GET" &&
         !request.path.startsWith("/api/") &&
         !request.path.startsWith("/proxy/") &&
-        !request.path.startsWith("/absproxy/")
+        !request.path.startsWith("/absproxy/") &&
+        !request.path.startsWith("/published/")
       ) {
         response.sendFile(path.join(webRoot, "index.html"));
         return;

@@ -32,6 +32,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      "/published": { target: "http://127.0.0.1:4174", changeOrigin: true },
       "/absproxy": {
         target: "http://127.0.0.1:4174",
         changeOrigin: true,

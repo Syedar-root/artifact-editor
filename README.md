@@ -24,6 +24,7 @@ packages/
 
 ```bash
 npm install
+docker compose -f compose.sandbox.yaml up -d --build
 npm run dev
 ```
 
@@ -32,7 +33,9 @@ npm run dev
 - Web：`http://127.0.0.1:4173`
 - NestJS：`http://127.0.0.1:4174`
 
-Vite 会把 `/api`、`/absproxy` 和兼容的 `/proxy` 请求转发给 NestJS。
+启动前按 [mock-nas 说明](mock-nas/README.md) 配置沙箱地址 `http://127.0.0.1:18081`。模拟环境将源码挂载到项目的 `mock-nas/artifacts`，依赖使用沙箱临时磁盘；原有沙箱地址也可以继续使用。
+
+Vite 会把 `/api`、`/published`、`/absproxy` 和兼容的 `/proxy` 请求转发给 NestJS。
 
 ## 构建和运行
 
@@ -52,13 +55,20 @@ DSH 接入保持为一个薄封装：构造时传入模型配置和可选的 Cor
 ```ts
 const harness = new DshRuntimeService({
   sessionRoot: config.sessionRoot,
-  model: { model: "deepseek-chat", baseURL: "https://api.deepseek.com", apiKey },
+  model: {
+    model: "deepseek-chat",
+    baseURL: "https://api.deepseek.com",
+    apiKey,
+  },
   // plugins: [[plugin, pluginConfig]], // 可选，直接使用 DSH 的 Cordis 插件
 });
 try {
   const reply = await harness.run(message, {
-    sessionId, cwd: workspace.root,
-    tools: toolService.forWorkspace(workspace), systemPrompt: toolService.prompt(workspace.root), signal,
+    sessionId,
+    cwd: workspace.root,
+    tools: toolService.forWorkspace(workspace),
+    systemPrompt: toolService.prompt(workspace.root),
+    signal,
   });
 } finally {
   await harness.close();
@@ -84,6 +94,10 @@ flowchart LR
   AIO --> NAS[NAS：源码、产物和 Git 历史]
   AIO --> SSD[快速存储：依赖与包缓存]
   NAS -. node_modules 链接 .-> SSD
+  Service --> Build[固定提交后台构建]
+  Build --> AIO
+  Build --> Releases[NAS：完整构建结果]
+  Controller --> Releases
   DSH --> Sessions[Server 持久化会话]
 ```
 
@@ -92,6 +106,18 @@ flowchart LR
 挂载目录需要允许 AIO 的执行用户读写。官方 SDK 默认使用容器的 `gem` 用户，而旧 Docker exec 实现使用 root；迁移已有 root 所有的目录时，应在部署侧按实际 UID/GID 设置目录所有者和 NAS 权限。服务不会自动提权或修改整个挂载目录的权限。
 
 依赖安装会把 package.json、lockfile 和 .npmrc 放到快速存储的暂存目录，运行 npm 或 pnpm 后把成功结果保存为按产物及依赖清单区分的缓存。产物目录的 `node_modules` 链接到该缓存；npm 下载缓存和 pnpm store 也位于快速存储中。源码 lockfile 在创建或编辑时保存，预览和历史版本切换不会改写源码清单及 lockfile。清单变化后重新安装，已有缓存可直接复用。预览所需的框架定位插件作为运行时附加依赖安装，不改写历史源码。
+
+打开预览和开始 Agent 编辑时，`WorkspaceService.ensureReady()` 检查源码目录和运行环境，并验证依赖缓存完成标记、声明的包目录、Vite 命令和 lockfile。沙箱过期或缓存损坏时重新安装并修复链接；恢复使用 `npm ci` 或 `pnpm install --frozen-lockfile`，不改写 NAS 的清单和 lockfile。缺少或不匹配的 lockfile 会明确报错，需要先通过依赖安装流程修正并保存版本。
+
+## 实时预览、版本和分享
+
+编辑时使用沙箱中的 Vite 和 HMR。创建产物以及 Agent 保存新 checkpoint 后，`BuildService` 自动在后台从该次 Git commit 导出独立源码，恢复其依赖并构建；Agent 回复不等待生产构建。独立构建目录由沙箱的 `ARTIFACT_BUILD_ROOT` 指定，默认 `/tmp/artifact-builds`，应使用临时快速存储，与源码、依赖目录分离，结束后删除。
+
+完整 HTML、JS、CSS、图片及构建记录保存到 Server 的 `ARTIFACT_RELEASE_ROOT`，默认 `mock-nas/releases/<artifactId>/<commitSha>/`。Server 直接通过 `/published/<artifactId>/<commitSha>/` 提供页面，成功结果复用，沙箱离线和 Server 重启不会改变已保存页面。这里支持当前 HTML/React/Vue 的 Vite 静态产物；SSR 产物需要独立运行时。
+
+浏览历史使用该版本的构建结果，代码浏览从同一 Git commit 读取，不改变当前工作区。选择“基于此版本编辑”才切换编辑分支，恢复依赖和实时预览；保存后形成新的全局版本。分享按钮返回当前所选已保存版本的固定地址；尚未成功构建时等待或重试。构建失败保留源码版本及其他成功版本，界面显示失败状态，不影响继续编辑。服务停止时未完成的构建记为中断，之后通过历史预览或分享重试。
+
+当前按单用户 Session 编排，后台构建只合并同一提交的重复请求，没有新增分布式锁、任务队列或沙箱供应商管理层。生产平台需让替换后的沙箱重新挂载 NAS，并提供稳定访问地址；地址变化时更新 Server 配置。
 
 使用 pnpm 时，在 Server 设置 `ARTIFACT_PACKAGE_MANAGER=pnpm`，并预先在沙箱镜像中安装 pnpm。该变量只决定未声明包管理器、没有 lockfile 的新产物；已有产物优先按 `package.json` 的 `packageManager` 声明，其次识别 `pnpm-lock.yaml`、`npm-shrinkwrap.json` 或 `package-lock.json`，未设置变量时默认 npm。声明了具体 npm/pnpm 版本的产物要求沙箱安装相同版本。把 npm 产物改为 pnpm 声明后，安装器会在快速存储中用 `pnpm import` 导入旧 npm lockfile，再生成并保存 `pnpm-lock.yaml`，保留原 npm lockfile。
 
@@ -110,3 +136,5 @@ DSH 会话保存在 Server 的 `ARTIFACT_SESSION_ROOT`，默认是仓库根目�
 `npm test` 运行 SDK、宿主版本工作流、DSH 会话与工具调用、外置依赖、NestJS 接口和 Web 回归检查。DSH 测试使用本地模型替身，不请求真实模型。SDK 的真实 Docker 测试通过 `SDK_DOCKER_CONTAINER` 指定容器。设置 `ARTIFACT_SANDBOX_TEST_URL=http://127.0.0.1:18080` 后运行 `npm run test:integration --workspace @artifact-editor/server`，验证官方 SDK 的文件、路径约束、取消、pnpm 缓存与失败恢复，以及 HTML/React/Vue 的创建、构建、版本、预览与真实 HMR 连接。测试直接调用官方 HTTP SDK，使用 `/tmp/artifact-aio-*` 的独立源码/依赖目录，并在结束时清理受管 session 和测试文件；要求沙箱已安装 pnpm、可访问包仓库，且预览端口 5173 空闲。
 
 `npm run test:web:integration` 使用 Chromium 验证首次打开和刷新时预览只加载一次。测试会启动独立的 Web 服务并提供固定接口响应，无需启动业务服务或 Docker；可通过 `ARTIFACT_TEST_BROWSER` 指定浏览器可执行文件。
+
+设置 `ARTIFACT_NAS_TEST=1` 后运行 `npm run test:nas --workspace @artifact-editor/server`，可验证真实 NAS 挂载、固定版本构建、历史代码读取、沙箱停止期间的静态分享，以及重启丢失依赖后的严格恢复和 HMR。该测试只停止/启动 `compose.sandbox.yaml` 的专用模拟沙箱（18081），使用 `mock-nas` 下独立测试目录并在结束时清理，请在该沙箱空闲时运行。

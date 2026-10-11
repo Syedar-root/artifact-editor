@@ -1,0 +1,2 @@
+FROM ghcr.io/agent-infra/sandbox:1.11.0
+RUN bash -lc 'corepack enable && corepack prepare pnpm@12.11.2 --activate'

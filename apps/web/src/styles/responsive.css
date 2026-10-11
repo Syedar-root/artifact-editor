@@ -1,6 +1,9 @@
 @media (max-width: 1200px) {
   .workspace {
-    grid-template-columns: minmax(300px, min(var(--chat-width, 420px), calc(100vw - 327px))) 7px minmax(0, 1fr);
+    grid-template-columns: minmax(
+        300px,
+        min(var(--chat-width, 420px), calc(100vw - 327px))
+      ) 7px minmax(0, 1fr);
   }
 
   .history-rail {
@@ -12,7 +15,9 @@
     width: 260px;
     visibility: hidden;
     transform: translateX(-100%);
-    transition: transform 240ms var(--ease-out), visibility 240ms;
+    transition:
+      transform 240ms var(--ease-out),
+      visibility 240ms;
     box-shadow: var(--shadow-popover);
   }
 
@@ -21,7 +26,8 @@
     transform: translateX(0);
   }
 
-  .mobile-only, .close-history {
+  .mobile-only,
+  .close-history {
     display: grid;
   }
 
@@ -67,7 +73,9 @@
     border-bottom: 1px solid var(--line);
   }
 
-  .brand > span:last-child, .header-separator, .stack-badge {
+  .brand > span:last-child,
+  .header-separator,
+  .stack-badge {
     display: none;
   }
 
@@ -77,6 +85,19 @@
 
   .header-actions {
     gap: 8px;
+  }
+
+  .header-actions .build-state,
+  .header-actions .share-artifact-button > span,
+  .header-actions .create-artifact-button > span {
+    display: none;
+  }
+
+  .header-actions .share-artifact-button,
+  .header-actions .create-artifact-button {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
   }
 
   .project-switcher {
@@ -230,7 +251,8 @@
 }
 
 @media (max-width: 380px) {
-  .view-tabs button, .view-tabs::before {
+  .view-tabs button,
+  .view-tabs::before {
     width: 60px;
   }
 

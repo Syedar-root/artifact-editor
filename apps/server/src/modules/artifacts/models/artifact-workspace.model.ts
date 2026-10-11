@@ -47,6 +47,7 @@ export type WorkspaceFileAccess = Omit<WorkspaceFiles, "list"> & {
 export interface DependencyOptions extends BashOptions {
   packages?: string[];
   persistLock?: boolean;
+  mode?: "update" | "restore";
 }
 export interface WorkspaceExecution {
   root: string;

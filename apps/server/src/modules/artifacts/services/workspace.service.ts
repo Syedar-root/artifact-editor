@@ -1,4 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
+import path from "node:path";
+import {
+  requireSuccess,
+  shellCommand,
+  type FileEntry,
+} from "@artifact-editor/sdk/server";
 import { ServerConfigService } from "../../../config/server-config.service.js";
 import { SandboxCommandService } from "../../../infrastructure/sandbox/services/sandbox-command.service.js";
 import { ArtifactFilesystemService } from "./artifact-filesystem.service.js";
@@ -40,5 +46,98 @@ export class WorkspaceService {
       message: "Create artifact",
       ignore: ["node_modules", "dist/", ".vite/", ".artifact/"],
     });
+  }
+
+  async ensureReady(artifactId: string, signal?: AbortSignal) {
+    const workspace = this.forArtifact(artifactId);
+    requireSuccess(
+      await workspace.execute(
+        "test -d . && test -r . && test -w . && node --version",
+        { signal },
+      ),
+    );
+    await workspace.prepareDependencies({
+      mode: "restore",
+      persistLock: false,
+      signal,
+    });
+    return workspace;
+  }
+
+  async checkpoint(artifactId: string, version: number) {
+    const checkpoint = (
+      await this.forArtifact(artifactId).versions.list()
+    ).find((item) => item.version === version);
+    if (!checkpoint) throw new Error(`找不到 V${version}`);
+    return checkpoint;
+  }
+
+  async snapshotFiles(artifactId: string, version: number) {
+    const checkpoint = await this.checkpoint(artifactId, version);
+    const result = requireSuccess(
+      await this.forArtifact(artifactId).execute(
+        shellCommand([
+          "git",
+          "ls-tree",
+          "-rz",
+          "--name-only",
+          checkpoint.commitSha,
+        ]),
+        { maxOutputBytes: 1024 * 1024 },
+      ),
+    );
+    const tree: FileEntry[] = [];
+    const directories = new Map<string, FileEntry[]>([[".", tree]]);
+    for (const file of result.stdout.split("\0").filter(Boolean).sort()) {
+      const parts = file.split("/");
+      for (let depth = 1; depth < parts.length; depth++) {
+        const directory = parts.slice(0, depth).join("/");
+        if (directories.has(directory)) continue;
+        const children: FileEntry[] = [];
+        directories
+          .get(path.posix.dirname(directory))!
+          .push({
+            name: parts[depth - 1],
+            path: directory,
+            type: "directory",
+            children,
+          });
+        directories.set(directory, children);
+      }
+      directories
+        .get(path.posix.dirname(file))!
+        .push({ name: path.posix.basename(file), path: file, type: "file" });
+    }
+    return {
+      root: this.root(artifactId),
+      tree,
+      truncated: false,
+      defaultFile: result.stdout.split("\0").includes("index.html")
+        ? "index.html"
+        : result.stdout.split("\0")[0] || "",
+    };
+  }
+
+  async snapshotFile(artifactId: string, version: number, file: string) {
+    const normalized = ArtifactWorkspace.resultPath(
+      this.root(artifactId),
+      file,
+    );
+    if (normalized === "." || file.includes("\\") || file.includes("\0"))
+      throw new Error("文件路径无效");
+    const checkpoint = await this.checkpoint(artifactId, version);
+    const result = requireSuccess(
+      await this.forArtifact(artifactId).execute(
+        shellCommand(["git", "show", `${checkpoint.commitSha}:${normalized}`]),
+        { maxOutputBytes: 1024 * 1024 },
+      ),
+    );
+    if (result.stdout.includes("\0"))
+      throw new Error("这是二进制文件，暂不支持文本读取");
+    return {
+      path: normalized,
+      content: result.stdout,
+      size: Buffer.byteLength(result.stdout),
+    };
   }
 }

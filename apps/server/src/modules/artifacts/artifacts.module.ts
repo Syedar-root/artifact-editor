@@ -8,10 +8,12 @@ import { ArtifactFilesystemService } from "./services/artifact-filesystem.servic
 import { SandboxModule } from "../../infrastructure/sandbox/sandbox.module.js";
 import { DependenciesService } from "./services/dependencies.service.js";
 import { ArtifactTemplateService } from "./services/artifact-template.service.js";
+import { BuildService } from "./services/build.service.js";
+import { PublishedController } from "./controllers/published.controller.js";
 
 @Module({
   imports: [SandboxModule],
-  controllers: [ArtifactsController],
+  controllers: [ArtifactsController, PublishedController],
   providers: [
     ArtifactsService,
     ArtifactRepository,
@@ -20,6 +22,7 @@ import { ArtifactTemplateService } from "./services/artifact-template.service.js
     ArtifactFilesystemService,
     DependenciesService,
     ArtifactTemplateService,
+    BuildService,
   ],
   exports: [ArtifactsService],
 })

@@ -162,6 +162,21 @@ async function fixture(context) {
       options.cwd.startsWith(store + "/"),
       "installer must run on fast storage",
     );
+    if (command === "npm" && args[0] === "ci") {
+      const lock = JSON.parse(
+        await fs.readFile(path.join(cwd, "package-lock.json"), "utf8"),
+      );
+      if (
+        JSON.stringify(lock.packages?.[""].dependencies) !==
+        JSON.stringify(pkg.dependencies)
+      )
+        return {
+          stdout: "",
+          stderr: "lockfile does not match manifest",
+          exitCode: 1,
+          truncated: false,
+        };
+    }
     await fs.appendFile(
       log,
       JSON.stringify({ command, args, cwd: options.cwd }) + "\n",
@@ -176,6 +191,13 @@ async function fixture(context) {
     await fs.mkdir(path.join(cwd, "node_modules", "example"), {
       recursive: true,
     });
+    for (const name of Object.keys({
+      ...pkg.dependencies,
+      ...pkg.devDependencies,
+    }))
+      await fs.mkdir(path.join(cwd, "node_modules", ...name.split("/")), {
+        recursive: true,
+      });
     await fs.writeFile(
       path.join(cwd, "node_modules", "example", "version"),
       pkg.dependencies.example,
@@ -561,4 +583,106 @@ test("真实 pnpm 在快速存储共享包内容，移动安装目录后链接�
     "相同包在不同产物中通过硬链接共享文件",
   );
   assert.ok(files[0].nlink >= 2);
+});
+
+test("沙箱临时依赖丢失后，持久化清单与 lockfile 保留并严格恢复链接", async (context) => {
+  const { root, store, manifest, run } = await fixture(context);
+  await manifest("1.0.0");
+  const first = await run();
+  const source = await fs.readFile(localPath(root + "/package.json"), "utf8");
+  const lock = await fs.readFile(
+    localPath(root + "/package-lock.json"),
+    "utf8",
+  );
+  assert.ok(first.directory.startsWith(store + "/"));
+  await fs.rm(localPath(store), { recursive: true, force: true });
+  const restored = await run({ mode: "restore" });
+  assert.equal(restored.cached, false);
+  assert.equal(
+    await fs.readFile(
+      localPath(root + "/node_modules/example/version"),
+      "utf8",
+    ),
+    "1.0.0",
+  );
+  assert.equal(
+    await fs.readFile(localPath(root + "/package.json"), "utf8"),
+    source,
+  );
+  assert.equal(
+    await fs.readFile(localPath(root + "/package-lock.json"), "utf8"),
+    lock,
+  );
+});
+
+test("有完成标记但缺少依赖包的缓存会重新安装，而不是误报就绪", async (context) => {
+  const { manifest, run } = await fixture(context);
+  await manifest("1.0.0");
+  const first = await run();
+  await fs.rm(localPath(first.directory + "/example"), {
+    recursive: true,
+    force: true,
+  });
+  const restored = await run({ mode: "restore" });
+  assert.equal(restored.cached, false);
+  assert.equal(
+    await fs.readFile(
+      localPath(restored.directory + "/example/version"),
+      "utf8",
+    ),
+    "1.0.0",
+  );
+});
+
+test("严格恢复拒绝缺少或不匹配的 lockfile，不悄悄升级依赖", async (context) => {
+  const { root, manifest, run } = await fixture(context);
+  await manifest("1.0.0");
+  await assert.rejects(run({ mode: "restore" }), /缺少 lockfile/u);
+  await run();
+  const lock = await fs.readFile(
+    localPath(root + "/package-lock.json"),
+    "utf8",
+  );
+  await manifest("2.0.0");
+  await assert.rejects(run({ mode: "restore" }), /lockfile/u);
+  assert.equal(
+    await fs.readFile(localPath(root + "/package-lock.json"), "utf8"),
+    lock,
+  );
+  assert.equal(
+    await fs.readFile(
+      localPath(root + "/node_modules/example/version"),
+      "utf8",
+    ),
+    "1.0.0",
+  );
+});
+
+test("pnpm 恢复使用冻结 lockfile，编辑安装仍允许更新", async (context) => {
+  const { manifest, run, log } = await fixture(context);
+  await manifest("1.0.0");
+  const first = await run({ packageManager: "pnpm" });
+  await fs.rm(localPath(first.directory + "/example"), {
+    recursive: true,
+    force: true,
+  });
+  await run({ packageManager: "pnpm", mode: "restore" });
+  const installs = (await fs.readFile(log, "utf8"))
+    .trim()
+    .split("\n")
+    .map(JSON.parse);
+  assert.ok(installs[0].args.includes("--no-frozen-lockfile"));
+  assert.ok(installs[1].args.includes("--frozen-lockfile"));
+});
+
+test("严格恢复不能复用更新模式由不匹配 lockfile 生成的缓存", async (context) => {
+  const { root, manifest, run } = await fixture(context);
+  await manifest("1.0.0");
+  await run();
+  const lockPath = localPath(root + "/package-lock.json");
+  const original = await fs.readFile(lockPath, "utf8");
+  await manifest("2.0.0");
+  await run({ persistLock: false });
+  assert.equal(await fs.readFile(lockPath, "utf8"), original);
+  await assert.rejects(run({ mode: "restore" }), /lockfile/u);
 });

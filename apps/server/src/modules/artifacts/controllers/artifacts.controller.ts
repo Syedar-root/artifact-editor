@@ -114,10 +114,32 @@ export class ArtifactsController {
       response.status(404).json({ error: "找不到这个产物" });
       return;
     }
-    await this.artifacts.initialize(artifactId);
+    response.json(await this.artifacts.checkpoints(artifactId));
+  }
+
+  @Post("artifacts/:artifactId/share")
+  @HttpCode(200)
+  async share(@Req() request: Request, @Res() response: Response) {
+    const version =
+      request.body?.version === undefined
+        ? undefined
+        : this.checkpointVersion(request.body.version);
+    if (version === null) {
+      response.status(400).json({ error: "版本号无效" });
+      return;
+    }
     response.json(
-      await this.artifacts.workspace(artifactId).versions.inspect(),
+      await this.artifacts.share(String(request.params.artifactId), version),
     );
+  }
+
+  @Get("artifacts/:artifactId/builds")
+  async builds(@Req() request: Request, @Res() response: Response) {
+    response.json({
+      builds: await this.artifacts.buildRecords(
+        String(request.params.artifactId),
+      ),
+    });
   }
 
   @Post("artifacts/:artifactId/checkpoints/:version/preview")
@@ -182,6 +204,15 @@ export class ArtifactsController {
       return;
     }
     const workspace = this.artifacts.workspace(artifactId);
+    if (request.query.version !== undefined) {
+      const version = this.checkpointVersion(request.query.version);
+      if (!version) {
+        response.status(400).json({ error: "版本号无效" });
+        return;
+      }
+      response.json(await this.artifacts.snapshotFiles(artifactId, version));
+      return;
+    }
     response.json({ root: workspace.root, ...(await workspace.files.list()) });
   }
 
@@ -205,6 +236,14 @@ export class ArtifactsController {
       return;
     }
     try {
+      if (request.query.version !== undefined) {
+        const version = this.checkpointVersion(request.query.version);
+        if (!version) throw new Error("版本号无效");
+        response.json(
+          await this.artifacts.snapshotFile(artifactId, version, filePath),
+        );
+        return;
+      }
       response.json(
         await this.artifacts.workspace(artifactId).files.read(filePath),
       );

@@ -8,6 +8,7 @@ import type {
   SessionSummary,
   ApiMessage,
   CheckpointPayload,
+  ArtifactBuild,
 } from "../types";
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useElementDrafts } from "./use-element-drafts";
@@ -58,6 +59,13 @@ export function useWorkbench() {
 
   const [checkpointError, setCheckpointError] = useState("");
 
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareUrl, setShareUrl] = useState("");
+  const [shareError, setShareError] = useState("");
+  const shareRequest = useRef<AbortController | null>(null);
+
+  useEffect(() => () => shareRequest.current?.abort(), []);
+
   const [messages, setMessages] = useState(initialMessages);
 
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -96,6 +104,10 @@ export function useWorkbench() {
     activeArtifactId,
     view,
     codeRefreshKey,
+    version:
+      checkpointState?.mode === "historical-preview"
+        ? (checkpointState.activeVersion ?? undefined)
+        : undefined,
   });
 
   const layout = usePanelResize();
@@ -271,12 +283,16 @@ export function useWorkbench() {
   ) {
     if (!artifactId || isThinking) return;
     drafts.reset();
+    shareRequest.current?.abort();
+    setShareLoading(false);
     setActiveArtifactId(artifactId);
     window.localStorage.setItem("active-artifact-id", artifactId);
     setArtifactMenuOpen(false);
     setCheckpoints([]);
     setCheckpointState(null);
     setCheckpointError("");
+    setShareUrl("");
+    setShareError("");
     setActiveSessionId(null);
     setPreviewArtifactId(null);
     setMessages([]);
@@ -336,7 +352,21 @@ export function useWorkbench() {
   }
 
   function applyCheckpointPayload(payload: CheckpointPayload) {
-    setCheckpoints(payload.checkpoints);
+    shareRequest.current?.abort();
+    setShareLoading(false);
+    setShareUrl("");
+    setShareError("");
+    setCheckpoints((current) =>
+      payload.checkpoints.map((checkpoint) => ({
+        ...checkpoint,
+        build:
+          payload.build?.commitSha === checkpoint.commitSha
+            ? payload.build
+            : (checkpoint.build ??
+              current.find((item) => item.commitSha === checkpoint.commitSha)
+                ?.build),
+      })),
+    );
     setCheckpointState(payload.state);
     if (payload.artifact) {
       const updatedArtifact = payload.artifact;
@@ -392,6 +422,97 @@ export function useWorkbench() {
       );
     } finally {
       setCheckpointLoading(false);
+    }
+  }
+
+  const hasPendingBuild = checkpoints.some(
+    (item) =>
+      item.build?.status === "queued" || item.build?.status === "building",
+  );
+  useEffect(() => {
+    if (!activeArtifactId || !hasPendingBuild) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function refreshBuilds() {
+      try {
+        const response = await fetch(
+          `/api/artifacts/${encodeURIComponent(activeArtifactId!)}/builds`,
+          { signal: controller.signal },
+        );
+        const payload = await readJsonResponse<{ builds: ArtifactBuild[] }>(
+          response,
+        );
+        if (!response.ok) throw new Error("无法读取构建状态");
+        if (!controller.signal.aborted)
+          setCheckpoints((current) =>
+            current.map((checkpoint) => ({
+              ...checkpoint,
+              build:
+                payload.builds.find(
+                  (build) => build.commitSha === checkpoint.commitSha,
+                ) ?? checkpoint.build,
+            })),
+          );
+      } catch {
+        /* 暂时不可用时保留已保存版本，稍后再检查。 */
+      }
+      if (!controller.signal.aborted) timer = setTimeout(refreshBuilds, 2000);
+    }
+    void refreshBuilds();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [activeArtifactId, hasPendingBuild]);
+
+  const activeBuild = checkpoints.find(
+    (item) =>
+      item.version ===
+      (checkpointState?.activeVersion ?? checkpointState?.workspaceVersion),
+  )?.build;
+
+  async function shareArtifact() {
+    const artifactId = activeArtifactId;
+    const version =
+      checkpointState?.activeVersion ?? checkpointState?.workspaceVersion;
+    if (!artifactId || !version || shareLoading || isThinking) return;
+    const request = new AbortController();
+    shareRequest.current = request;
+    setShareLoading(true);
+    setShareError("");
+    setShareUrl("");
+    try {
+      const response = await fetch(
+        `/api/artifacts/${encodeURIComponent(artifactId)}/share`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ version }),
+          signal: request.signal,
+        },
+      );
+      const payload = await readJsonResponse<{
+        url: string;
+        build: ArtifactBuild;
+        error?: string;
+      }>(response);
+      if (!response.ok) throw new Error(payload.error || "无法准备分享页面");
+      if (request.signal.aborted) return;
+      setShareUrl(new URL(payload.url, window.location.origin).href);
+      setCheckpoints((current) =>
+        current.map((checkpoint) =>
+          checkpoint.commitSha === payload.build.commitSha
+            ? { ...checkpoint, build: payload.build }
+            : checkpoint,
+        ),
+      );
+    } catch (error) {
+      if (!request.signal.aborted)
+        setShareError(
+          error instanceof Error ? error.message : "无法准备分享页面",
+        );
+    } finally {
+      if (!request.signal.aborted) setShareLoading(false);
     }
   }
 
@@ -516,6 +637,7 @@ export function useWorkbench() {
         runtimeWarning?: string;
         checkpoints?: CheckpointSummary[];
         checkpointState?: CheckpointState;
+        build?: ArtifactBuild;
       }>(response);
       if (!response.ok) throw new Error(payload.error || "DSH Agent 调用失败");
 
@@ -529,7 +651,18 @@ export function useWorkbench() {
         );
       }
       if (payload.runtimeWarning) setArtifactsError(payload.runtimeWarning);
-      if (payload.checkpoints) setCheckpoints(payload.checkpoints);
+      if (payload.checkpoints)
+        setCheckpoints((current) =>
+          payload.checkpoints!.map((checkpoint) => ({
+            ...checkpoint,
+            build:
+              payload.build?.commitSha === checkpoint.commitSha
+                ? payload.build
+                : current.find(
+                    (item) => item.commitSha === checkpoint.commitSha,
+                  )?.build,
+          })),
+        );
       if (payload.checkpointState) setCheckpointState(payload.checkpointState);
 
       setMessages((current) => [
@@ -596,6 +729,11 @@ export function useWorkbench() {
   }
 
   return {
+    shareArtifact,
+    shareLoading,
+    shareUrl,
+    shareError,
+    activeBuild,
     setSidebarOpen,
     artifactMenuOpen,
     setArtifactMenuOpen,
